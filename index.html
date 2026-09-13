@@ -65,7 +65,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
 
   <h3>ノーツ</h3>
   <div class="note-type active" data-kind="tap_white"><span class="swatch" style="background:#f3f5f8"></span>普通・白</div>
-  <div class="note-type" data-kind="tap_yellow"><span class="swatch" style="background:#ffea00"></span>普通・黄</div>
+  <div class="note-type" data-kind="tap_yellow"><span class="swatch" style="background:rgba(255,234,0,0.5)"></span>普通・黄</div>
   <div class="note-type" data-kind="hold"><span class="swatch" style="background:#f3f5f8"></span>ロング</div>
   <div class="note-type" data-kind="wide_red"><span class="swatch" style="background:#ff5364"></span>幅2・赤</div>
   <div class="note-type" data-kind="wide_blue"><span class="swatch" style="background:#4d8cff"></span>幅2・青</div>
@@ -456,6 +456,12 @@ function draw(){
     if(y>H||y+(n.duration||0)*state.zoom<0)continue;
 
     const selected=n.id===state.selectedId;
+    
+    ctx.save();
+    if(n.kind==="tap_yellow"){
+      ctx.globalAlpha=0.5;
+    }
+
     ctx.fillStyle=color(n.kind);
     ctx.strokeStyle=selected?"#fff":"rgba(255,255,255,.4)";
     ctx.lineWidth=selected?3:1;
@@ -473,6 +479,7 @@ function draw(){
       }
       ctx.beginPath();ctx.roundRect(x,y-9,width,18,5);ctx.fill();ctx.stroke();
     }
+    ctx.restore();
   }
 
   // 再生ヘッド
