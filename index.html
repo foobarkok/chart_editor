@@ -51,7 +51,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   <button id="loadButton">JSON読込</button>
   <button id="saveButton">JSON保存</button>
   <input id="jsonInput" type="file" accept=".json,application/json" hidden>
-  <div class="group"><label>BPM</label><input id="bpmInput" type="number" min="1" step=".01" value="120" style="width:75px"></div>
+  <div class="group"><label>初期BPM</label><input id="bpmInput" type="number" min="1" step=".01" value="120" style="width:75px"></div>
   <div class="group"><label>Snap</label><select id="snapInput">
     <option value="0">なし</option><option value="4">1/4</option><option value="8">1/8</option>
     <option value="12">1/12</option><option value="16" selected>1/16</option>
@@ -68,6 +68,12 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
     <button class="mode active" data-mode="place">配置</button>
     <button class="mode" data-mode="select">選択</button>
     <button class="mode" data-mode="erase">削除</button>
+  </div>
+
+  <h3>BPM変更</h3>
+  <div class="group" style="margin-bottom:10px">
+    <label>配置BPM</label>
+    <input id="bpmPlacementInput" type="number" min="1" step=".01" value="120" style="width:100px">
   </div>
 
   <h3>ノーツ</h3>
@@ -87,10 +93,9 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
 
   <h3>操作</h3>
   <div class="info">
-    配置モードで譜面上をクリックすると選択中のノーツ/変速/効果を配置します。<br>
-    すでにノーツがある場所をクリックすると削除できます。<br>
-    ロングノーツはドラッグして長さを設定します。<br><br>
-    縦波形エリアをクリックするとその位置へジャンプします。<br><br>
+    配置モードで譜面上をクリックするとノーツ/BPM変更/変速/効果を配置します。<br>
+    BPMレーン(赤)をクリックすると「配置BPM」値のノーツを設置できます。<br>
+    すでにノーツがある場所をクリックすると削除できます。<br><br>
     <kbd>0</kbd>〜<kbd>9</kbd>: 曲の0%〜90%地点へジャンプ<br>
     ホイール: 縦スクロール<br>
     <kbd>Shift</kbd> + ホイール: 横スクロール<br>
@@ -126,6 +131,9 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   <div id="selectionPanel" hidden>
     <div class="small">位置 (拍)</div><input id="editTime" type="number" step=".01">
     <div class="small">レーン (1〜6 / 効果1〜3)</div><input id="editLane" type="number" min="1" max="6" step="1">
+    <div id="editBpmGroup" hidden>
+      <div class="small">BPM</div><input id="editBpm" type="number" min="1" step=".01">
+    </div>
     <div id="editDurationGroup">
       <div class="small">長さ (拍)</div><input id="editDuration" type="number" min="0" step=".01">
     </div>
@@ -150,7 +158,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
 
 const state={
   version:1,bpm:120,duration:60,
-  notes:[],speeds:[],effects:[],
+  notes:[],speeds:[],effects:[],bpms:[],
   effectTypes:["effect","fever","bg_change"],
   activeEffectType:"effect",
   selectedId:null,
@@ -168,8 +176,12 @@ const chart=document.getElementById("chart");
 const ctx=chart.getContext("2d");
 
 const BEAT_W=42;
+const BPM_X=BEAT_W;
+const BPM_W=55;
+
+const LANES_X=BPM_X+BPM_W+5;
 const LANE_W=92,GAP=3,TOP=30,MIN_CHART_SECONDS=60;
-const LANES_RIGHT=BEAT_W+6*(LANE_W+GAP)-GAP;
+const LANES_RIGHT=LANES_X+6*(LANE_W+GAP)-GAP;
 
 const SPD_X=LANES_RIGHT+5;
 const SPD_W=55;
@@ -182,8 +194,50 @@ const WAVE_X=EFF_RIGHT+10;
 const WAVE_W=75;
 const WAVE_CENTER=WAVE_X+WAVE_W/2;
 
-function timeToBeats(t){return (t*state.bpm)/60}
-function beatsToTime(b){return (b*60)/state.bpm}
+function getBpmMap(){
+  const list=[...state.bpms].sort((a,b)=>a.time-b.time);
+  const segments=[];
+  const baseBpm=state.bpm||120;
+
+  if(list.length===0||list[0].time>0){
+    segments.push({time:0,bpm:baseBpm,startBeat:0});
+  }
+
+  for(const b of list){
+    if(b.time<=0){
+      if(segments.length===0) segments.push({time:0,bpm:b.bpm,startBeat:0});
+      else segments[0].bpm=b.bpm;
+      continue;
+    }
+    const prev=segments[segments.length-1];
+    const dt=b.time-prev.time;
+    const dBeat=(dt*prev.bpm)/60;
+    segments.push({id:b.id,time:b.time,bpm:b.bpm,startBeat:prev.startBeat+dBeat});
+  }
+  return segments;
+}
+
+function timeToBeats(t){
+  if(t<=0)return 0;
+  const segments=getBpmMap();
+  let seg=segments[0];
+  for(let i=0;i<segments.length;i++){
+    if(segments[i].time<=t) seg=segments[i];
+    else break;
+  }
+  return seg.startBeat+((t-seg.time)*seg.bpm)/60;
+}
+
+function beatsToTime(b){
+  if(b<=0)return 0;
+  const segments=getBpmMap();
+  let seg=segments[0];
+  for(let i=0;i<segments.length;i++){
+    if(segments[i].startBeat<=b) seg=segments[i];
+    else break;
+  }
+  return seg.time+((b-seg.startBeat)*60)/seg.bpm;
+}
 
 function chartWidth(){return WAVE_X+WAVE_W+20}
 function chartHeight(){
@@ -260,8 +314,10 @@ new ResizeObserver(resize).observe(wrap);
 function snapTime(t){
   const div=Number(document.getElementById("snapInput").value);
   if(!div)return Math.max(0,t);
-  const unit=(60/state.bpm)*4/div;
-  return Math.max(0,Math.round(t/unit)*unit);
+  const b=timeToBeats(t);
+  const unit=4/div;
+  const snappedBeat=Math.round(b/unit)*unit;
+  return Math.max(0,beatsToTime(snappedBeat));
 }
 
 function color(kind){
@@ -296,9 +352,21 @@ function draw(){
   ctx.textAlign="center";
   ctx.fillText("拍",BEAT_W/2,18);
 
+  // BPM変更レーン（赤の太線枠）
+  ctx.fillStyle="#1c1416";
+  ctx.fillRect(BPM_X,0,BPM_W,H);
+  ctx.strokeStyle="#ff5364";
+  ctx.lineWidth=3;
+  ctx.strokeRect(BPM_X+1.5,1.5,BPM_W-3,H-3);
+  ctx.lineWidth=1;
+  ctx.fillStyle="#ff8e9b";
+  ctx.font="11px system-ui";
+  ctx.textAlign="center";
+  ctx.fillText("BPM",BPM_X+BPM_W/2,18);
+
   // 1〜6レーン描画
   for(let lane=0;lane<6;lane++){
-    const x=BEAT_W+lane*(LANE_W+GAP);
+    const x=LANES_X+lane*(LANE_W+GAP);
     ctx.fillStyle=lane%2?"#151820":"#12151b";
     ctx.fillRect(x,0,LANE_W,H);
     ctx.strokeStyle="#485266";
@@ -399,19 +467,18 @@ function draw(){
   }
 
   // 小節線・表拍線・裏拍線の描画
-  const beat=60/state.bpm;
   const maxT=Math.max(state.duration,MIN_CHART_SECONDS)+2;
+  const maxBeats=timeToBeats(maxT);
   const snapVal=Number(document.getElementById("snapInput").value);
   const subDiv=snapVal>0?(snapVal/4):2;
-  const stepT=beat/subDiv;
-  const totalSteps=Math.ceil(maxT/stepT);
+  const totalSteps=Math.ceil(maxBeats*subDiv);
 
   for(let i=0;i<=totalSteps;i++){
-    const t=i*stepT;
+    const beatIdx=i/subDiv;
+    const t=beatsToTime(beatIdx);
     const y=timeToY(t);
     if(y<0||y>H)continue;
 
-    const beatIdx=i/subDiv;
     const isBeat=Math.abs(beatIdx-Math.round(beatIdx))<0.0001;
     const roundedBeat=Math.round(beatIdx);
     const isMeasure=isBeat&&(roundedBeat%4===0);
@@ -444,6 +511,30 @@ function draw(){
         ctx.fillText(`${measure}.${beatInMeasure}`,BEAT_W-5,y+3);
       }
     }
+  }
+
+  // BPM変更ノーツ
+  for(const b of state.bpms){
+    const y=timeToY(b.time);
+    if(y<0||y>H)continue;
+
+    const selected=b.id===state.selectedId;
+
+    ctx.strokeStyle="#ff5364";
+    ctx.lineWidth=selected?2.5:1.5;
+    ctx.setLineDash([4,2]);
+    ctx.beginPath();ctx.moveTo(BEAT_W,y);ctx.lineTo(LANES_X,y);ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle="#ff5364";
+    ctx.strokeStyle=selected?"#fff":"rgba(0,0,0,0.4)";
+    ctx.lineWidth=selected?2:1;
+    ctx.beginPath();ctx.roundRect(BPM_X+4,y-9,BPM_W-8,18,4);ctx.fill();ctx.stroke();
+
+    ctx.fillStyle="#fff";
+    ctx.font="bold 10px system-ui";
+    ctx.textAlign="center";
+    ctx.fillText(b.bpm,BPM_X+BPM_W/2,y+4);
   }
 
   // 効果イベント描画（3列）
@@ -480,7 +571,7 @@ function draw(){
     ctx.strokeStyle=c;
     ctx.lineWidth=selected?2.5:1.5;
     ctx.setLineDash([4,2]);
-    ctx.beginPath();ctx.moveTo(BEAT_W,y);ctx.lineTo(SPD_X,y);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(LANES_X,y);ctx.lineTo(SPD_X,y);ctx.stroke();
     ctx.setLineDash([]);
 
     ctx.fillStyle=c;
@@ -496,7 +587,7 @@ function draw(){
 
   // ノーツ
   for(const n of state.notes){
-    let x=BEAT_W+n.lane*(LANE_W+GAP)+6;
+    let x=LANES_X+n.lane*(LANE_W+GAP)+6;
     const y=timeToY(n.time);
     let width=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
     if(y>H||y+(n.duration||0)*state.zoom<0)continue;
@@ -573,7 +664,7 @@ document.querySelectorAll(".note-type").forEach(b=>b.addEventListener("click",()
 function hitTest(x,y){
   for(let i=state.notes.length-1;i>=0;i--){
     const n=state.notes[i];
-    let nx=BEAT_W+n.lane*(LANE_W+GAP)+6,ny=timeToY(n.time);
+    let nx=LANES_X+n.lane*(LANE_W+GAP)+6,ny=timeToY(n.time);
     let nw=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
 
     if(n.kind==="hold"){
@@ -585,6 +676,17 @@ function hitTest(x,y){
         nw -= 16;
       }
       if(x>=nx&&x<=nx+nw&&y>=ny-9&&y<=ny+9)return n;
+    }
+  }
+  return null;
+}
+
+function hitTestBpm(x,y){
+  for(let i=state.bpms.length-1;i>=0;i--){
+    const b=state.bpms[i];
+    const sy=timeToY(b.time);
+    if(x>=BPM_X&&x<=BPM_X+BPM_W&&Math.abs(y-sy)<=10){
+      return b;
     }
   }
   return null;
@@ -667,6 +769,21 @@ function addNote(lane,time,duration=0){
   draw();
 }
 
+function addBpmNote(time, bpm){
+  const t=snapTime(time);
+  state.bpms=state.bpms.filter(b=>Math.abs(b.time-t)>0.0001);
+  const b={
+    id:Date.now().toString(36)+Math.random().toString(36).slice(2),
+    time:t,
+    bpm:bpm
+  };
+  state.bpms.push(b);
+  state.bpms.sort((a,b)=>a.time-b.time);
+  state.selectedId=b.id;
+  renderSelection();
+  draw();
+}
+
 function addSpeedNote(time, ratio){
   const t=snapTime(time);
   state.speeds=state.speeds.filter(s=>Math.abs(s.time-t)>0.0001);
@@ -710,11 +827,13 @@ chart.addEventListener("pointerdown",e=>{
   }
 
   const hit=hitTest(x,y);
+  const hitBpm=hitTestBpm(x,y);
   const hitSpd=hitTestSpeed(x,y);
   const hitEff=hitTestEffect(x,y);
 
   if(state.mode==="select"){
     if(hit) state.selectedId=hit.id;
+    else if(hitBpm) state.selectedId=hitBpm.id;
     else if(hitSpd) state.selectedId=hitSpd.id;
     else if(hitEff) state.selectedId=hitEff.id;
     else state.selectedId=null;
@@ -725,18 +844,26 @@ chart.addEventListener("pointerdown",e=>{
   if(state.mode==="erase"){
     if(hit){
       state.notes=state.notes.filter(n=>n.id!==hit.id);
+    }else if(hitBpm){
+      state.bpms=state.bpms.filter(b=>b.id!==hitBpm.id);
     }else if(hitSpd){
       state.speeds=state.speeds.filter(s=>s.id!==hitSpd.id);
     }else if(hitEff){
       state.effects=state.effects.filter(ef=>ef.id!==hitEff.id);
     }
-    const delTarget = hit?.id || hitSpd?.id || hitEff?.id;
+    const delTarget = hit?.id || hitBpm?.id || hitSpd?.id || hitEff?.id;
     if(state.selectedId===delTarget) state.selectedId=null;
     renderSelection();draw();
     return;
   }
 
   if(state.mode==="place"){
+    if(hitBpm){
+      state.bpms=state.bpms.filter(b=>b.id!==hitBpm.id);
+      if(state.selectedId===hitBpm.id)state.selectedId=null;
+      renderSelection();draw();
+      return;
+    }
     if(hitSpd){
       state.speeds=state.speeds.filter(s=>s.id!==hitSpd.id);
       if(state.selectedId===hitSpd.id)state.selectedId=null;
@@ -753,6 +880,13 @@ chart.addEventListener("pointerdown",e=>{
       state.effects=state.effects.filter(ef=>ef.id!==hitEff.id);
       if(state.selectedId===hitEff.id)state.selectedId=null;
       renderSelection();draw();
+      return;
+    }
+
+    // BPM変更レーン判定
+    if(x>=BPM_X&&x<=BPM_X+BPM_W){
+      const bpmVal=parseFloat(document.getElementById("bpmPlacementInput").value)||120;
+      addBpmNote(yToTime(y), bpmVal);
       return;
     }
 
@@ -773,8 +907,8 @@ chart.addEventListener("pointerdown",e=>{
     }
 
     // 通常ノーツレーン判定
-    if(x<BEAT_W)return;
-    const lane=Math.floor((x-BEAT_W)/(LANE_W+GAP));
+    if(x<LANES_X)return;
+    const lane=Math.floor((x-LANES_X)/(LANE_W+GAP));
     if(lane<0||lane>=6)return;
 
     const time=snapTime(yToTime(y));
@@ -784,7 +918,9 @@ chart.addEventListener("pointerdown",e=>{
     if(isNoteOverlapping(lane, time, width)) return;
 
     if(state.noteKind==="hold"){
-      holdDrag={lane,time,startY:y,duration:60/state.bpm};
+      const snapVal=Number(document.getElementById("snapInput").value)||16;
+      const initialDur=beatsToTime(timeToBeats(time)+4/snapVal)-time;
+      holdDrag={lane,time,startY:y,duration:Math.max(0, initialDur)};
       chart.setPointerCapture(e.pointerId);
       drawPreview();
     }else{
@@ -797,10 +933,8 @@ chart.addEventListener("pointermove",e=>{
   if(!holdDrag)return;
   const r=chart.getBoundingClientRect();
   const y=e.clientY-r.top;
-  holdDrag.duration=Math.max(
-    60/state.bpm,
-    snapTime(yToTime(y))-holdDrag.time
-  );
+  const endTime=snapTime(yToTime(y));
+  holdDrag.duration=Math.max(0, endTime-holdDrag.time);
   drawPreview();
 });
 
@@ -819,7 +953,7 @@ function drawPreview(){
   draw();
   if(!holdDrag)return;
 
-  const x=BEAT_W+holdDrag.lane*(LANE_W+GAP)+6;
+  const x=LANES_X+holdDrag.lane*(LANE_W+GAP)+6;
   const y=timeToY(holdDrag.time);
   const h=Math.max(14,holdDrag.duration*state.zoom);
 
@@ -891,13 +1025,14 @@ document.getElementById("addEffectTypeButton").addEventListener("click",()=>{
 
 function renderSelection(){
   const n=state.notes.find(n=>n.id===state.selectedId);
+  const b=state.bpms.find(b=>b.id===state.selectedId);
   const s=state.speeds.find(s=>s.id===state.selectedId);
   const e=state.effects.find(e=>e.id===state.selectedId);
 
   const none=document.getElementById("selectionNone");
   const panel=document.getElementById("selectionPanel");
 
-  if(!n && !s && !e){none.hidden=false;panel.hidden=true;return}
+  if(!n && !b && !s && !e){none.hidden=false;panel.hidden=true;return}
 
   none.hidden=true;panel.hidden=false;
 
@@ -906,20 +1041,26 @@ function renderSelection(){
   const editDurGroup=document.getElementById("editDurationGroup");
   const editKindGroup=document.getElementById("editKindGroup");
   const editNameGroup=document.getElementById("editNameGroup");
+  const editBpmGroup=document.getElementById("editBpmGroup");
 
   if(n){
-    editDurGroup.hidden=false;editKindGroup.hidden=false;editNameGroup.hidden=true;
+    editDurGroup.hidden=false;editKindGroup.hidden=false;editNameGroup.hidden=true;editBpmGroup.hidden=true;
     editLane.disabled=false;editLane.min=1;editLane.max=6;
     editTime.value=+timeToBeats(n.time).toFixed(2);
     editLane.value=n.lane+1;
     document.getElementById("editDuration").value=+timeToBeats(n.duration||0).toFixed(2);
     document.getElementById("editKind").value=n.kind;
+  }else if(b){
+    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=true;editBpmGroup.hidden=false;
+    editLane.disabled=true;
+    editTime.value=+timeToBeats(b.time).toFixed(2);
+    document.getElementById("editBpm").value=b.bpm;
   }else if(s){
-    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=true;
+    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=true;editBpmGroup.hidden=true;
     editLane.disabled=true;
     editTime.value=+timeToBeats(s.time).toFixed(2);
   }else if(e){
-    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=false;
+    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=false;editBpmGroup.hidden=true;
     editLane.disabled=false;editLane.min=1;editLane.max=3;
     editTime.value=+timeToBeats(e.time).toFixed(2);
     editLane.value=(e.lane||0)+1;
@@ -929,6 +1070,7 @@ function renderSelection(){
 
 document.getElementById("applyEdit").addEventListener("click",()=>{
   const n=state.notes.find(n=>n.id===state.selectedId);
+  const b=state.bpms.find(b=>b.id===state.selectedId);
   const s=state.speeds.find(s=>s.id===state.selectedId);
   const e=state.effects.find(e=>e.id===state.selectedId);
 
@@ -942,6 +1084,10 @@ document.getElementById("applyEdit").addEventListener("click",()=>{
     n.kind=document.getElementById("editKind").value;
     n.width=n.kind.startsWith("wide_")?2:1;
     state.duration=Math.max(state.duration,n.time+n.duration);
+  }else if(b){
+    b.time=beatsToTime(beatPos);
+    b.bpm=Math.max(1,Number(document.getElementById("editBpm").value)||120);
+    state.bpms.sort((x,y)=>x.time-y.time);
   }else if(s){
     s.time=beatsToTime(beatPos);
     state.speeds.sort((a,b)=>a.time-b.time);
@@ -1120,6 +1266,7 @@ document.addEventListener("keydown",e=>{
   if(e.code==="Space"){e.preventDefault();playAudio()}
   if(e.key==="Delete"&&state.selectedId){
     state.notes=state.notes.filter(n=>n.id!==state.selectedId);
+    state.bpms=state.bpms.filter(b=>b.id!==state.selectedId);
     state.speeds=state.speeds.filter(s=>s.id!==state.selectedId);
     state.effects=state.effects.filter(ef=>ef.id!==state.selectedId);
     state.selectedId=null;renderSelection();draw();
@@ -1129,9 +1276,10 @@ document.addEventListener("keydown",e=>{
     e.preventDefault();
     const snap=Number(document.getElementById("snapInput").value);
     const stepBeats=snap>0?(4/snap):1;
-    const stepSec=stepBeats*(60/state.bpm);
+    const currentBeat=timeToBeats(currentTime());
     const dir=e.key==="ArrowLeft"?-1:1;
-    seekTo(currentTime()+dir*stepSec);
+    const targetBeat=Math.max(0, currentBeat + dir * stepBeats);
+    seekTo(beatsToTime(targetBeat));
   }
 
   if(e.ctrlKey&&e.key.toLowerCase()==="s"){
@@ -1147,7 +1295,8 @@ function chartData(){
     notes:state.notes,
     effects:state.effects,
     effectTypes:state.effectTypes,
-    speeds:state.speeds
+    speeds:state.speeds,
+    bpms:state.bpms
   };
 }
 
@@ -1176,6 +1325,7 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
       state.effectTypes=Array.isArray(d.effectTypes)&&d.effectTypes.length?d.effectTypes:["effect"];
       state.activeEffectType=state.effectTypes[0];
       state.speeds=Array.isArray(d.speeds)?d.speeds:[];
+      state.bpms=Array.isArray(d.bpms)?d.bpms:[];
       document.getElementById("bpmInput").value=state.bpm;
       state.selectedId=null;
       renderEffectTypes();renderSelection();resize();
@@ -1188,7 +1338,7 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
 
 document.getElementById("newButton").addEventListener("click",()=>{
   stopAudio();
-  state.notes=[];state.effects=[];state.speeds=[];state.selectedId=null;
+  state.notes=[];state.effects=[];state.speeds=[];state.bpms=[];state.selectedId=null;
   state.offset=0;state.pausedAt=0;state.duration=state.buffer?.duration||60;
   renderEffectTypes();renderSelection();resize();
 });
