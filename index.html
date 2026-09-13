@@ -64,19 +64,19 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   </div>
 
   <h3>ノーツ</h3>
-  <div class="note-type active" data-kind="tap_white"><span class="swatch" style="background:#f3f5f8"></span>普通・白</div>
-  <div class="note-type" data-kind="tap_yellow"><span class="swatch" style="background:rgba(255,234,0,0.5)"></span>普通・黄</div>
-  <div class="note-type" data-kind="hold"><span class="swatch" style="background:#f3f5f8"></span>ロング</div>
-  <div class="note-type" data-kind="wide_red"><span class="swatch" style="background:#ff5364"></span>幅2・赤</div>
-  <div class="note-type" data-kind="wide_blue"><span class="swatch" style="background:#4d8cff"></span>幅2・青</div>
+  <div class="note-type active" data-group="note" data-kind="tap_white"><span class="swatch" style="background:#f3f5f8"></span>普通・白</div>
+  <div class="note-type" data-group="note" data-kind="tap_yellow"><span class="swatch" style="background:rgba(255,234,0,0.5)"></span>普通・黄</div>
+  <div class="note-type" data-group="note" data-kind="hold"><span class="swatch" style="background:#f3f5f8"></span>ロング</div>
+  <div class="note-type" data-group="note" data-kind="wide_red"><span class="swatch" style="background:#ff5364"></span>幅2・赤</div>
+  <div class="note-type" data-group="note" data-kind="wide_blue"><span class="swatch" style="background:#4d8cff"></span>幅2・青</div>
 
   <h3>変速ノーツ</h3>
-  <div class="note-type" data-kind="speed_0.5"><span class="swatch" style="background:#00e5ff"></span>変速 1/2倍</div>
-  <div class="note-type" data-kind="speed_1"><span class="swatch" style="background:#00e676"></span>変速 1倍</div>
-  <div class="note-type" data-kind="speed_1.5"><span class="swatch" style="background:#b2ff59"></span>変速 1.5倍</div>
-  <div class="note-type" data-kind="speed_2"><span class="swatch" style="background:#ffea00"></span>変速 2倍</div>
-  <div class="note-type" data-kind="speed_3"><span class="swatch" style="background:#ff9100"></span>変速 3倍</div>
-  <div class="note-type" data-kind="speed_4"><span class="swatch" style="background:#ff2a6d"></span>変速 4倍</div>
+  <div class="note-type" data-group="speed" data-kind="speed_0.5"><span class="swatch" style="background:#00e5ff"></span>変速 1/2倍</div>
+  <div class="note-type active" data-group="speed" data-kind="speed_1"><span class="swatch" style="background:#00e676"></span>変速 1倍</div>
+  <div class="note-type" data-group="speed" data-kind="speed_1.5"><span class="swatch" style="background:#b2ff59"></span>変速 1.5倍</div>
+  <div class="note-type" data-group="speed" data-kind="speed_2"><span class="swatch" style="background:#ffea00"></span>変速 2倍</div>
+  <div class="note-type" data-group="speed" data-kind="speed_3"><span class="swatch" style="background:#ff9100"></span>変速 3倍</div>
+  <div class="note-type" data-group="speed" data-kind="speed_4"><span class="swatch" style="background:#ff2a6d"></span>変速 4倍</div>
 
   <h3>操作</h3>
   <div class="info">
@@ -137,7 +137,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
 const state={
   version:1,bpm:120,duration:60,
   notes:[],effects:[],speeds:[],selectedId:null,
-  noteKind:"tap_white",mode:"place",
+  noteKind:"tap_white",speedKind:"speed_1",mode:"place",
   zoom:180,offset:0,
   audioContext:null,buffer:null,source:null,
   playing:false,startedAt:0,pausedAt:0
@@ -511,14 +511,18 @@ function setMode(mode){
   document.querySelectorAll(".mode").forEach(b=>b.classList.toggle("active",b.dataset.mode===mode));
 }
 
-function setKind(kind){
-  state.noteKind=kind;
-  document.querySelectorAll(".note-type").forEach(b=>b.classList.toggle("active",b.dataset.kind===kind));
+function setKind(group, kind){
+  if(group==="note"){
+    state.noteKind=kind;
+  }else if(group==="speed"){
+    state.speedKind=kind;
+  }
+  document.querySelectorAll(`.note-type[data-group="${group}"]`).forEach(b=>b.classList.toggle("active",b.dataset.kind===kind));
   setMode("place");
 }
 
 document.querySelectorAll(".mode").forEach(b=>b.addEventListener("click",()=>setMode(b.dataset.mode)));
-document.querySelectorAll(".note-type").forEach(b=>b.addEventListener("click",()=>setKind(b.dataset.kind)));
+document.querySelectorAll(".note-type").forEach(b=>b.addEventListener("click",()=>setKind(b.dataset.group, b.dataset.kind)));
 
 function hitTest(x,y){
   for(let i=state.notes.length-1;i>=0;i--){
@@ -673,11 +677,9 @@ chart.addEventListener("pointerdown",e=>{
       return;
     }
 
-    if(state.noteKind.startsWith("speed_")||(x>=SPD_X&&x<=SPD_X+SPD_W)){
-      let ratio=1;
-      if(state.noteKind.startsWith("speed_")){
-        ratio=parseFloat(state.noteKind.replace("speed_",""));
-      }
+    // 変速レーンの判定
+    if(x>=SPD_X&&x<=SPD_X+SPD_W){
+      const ratio=parseFloat(state.speedKind.replace("speed_",""));
       addSpeedNote(yToTime(y), ratio);
       return;
     }
@@ -1037,7 +1039,8 @@ document.getElementById("newButton").addEventListener("click",()=>{
   renderSelection();renderEffects();resize();
 });
 
-setKind("tap_white");
+setKind("note", "tap_white");
+setKind("speed", "speed_1");
 renderSelection();
 renderEffects();
 resize();
