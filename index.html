@@ -164,7 +164,7 @@ const state={
   selectedId:null,
   noteKind:"tap_white",speedKind:"speed_1",mode:"place",
   zoom:180,offset:0,
-  audioContext:null,buffer:null,source:null,
+  audioContext:null,buffer:null,audioDuration:null,source:null,
   playing:false,startedAt:0,pausedAt:0
 };
 
@@ -1161,10 +1161,11 @@ function scheduleNotesSE(startSec){
   clearSE();
   if(!kickBuffer||!state.audioContext)return;
 
+  const audioDuration=state.audioDuration??state.buffer?.duration??0;
   const nowCtx=state.audioContext.currentTime;
   for(const n of state.notes){
     if(n.kind==="tap_yellow") continue;
-    if(n.time>=startSec){
+    if(n.time>=startSec && n.time<=audioDuration){
       const delay=n.time-startSec;
       const seSource=state.audioContext.createBufferSource();
       seSource.buffer=kickBuffer;
@@ -1179,8 +1180,12 @@ async function loadAudio(file){
   await initAudioContext();
 
   const data=await file.arrayBuffer();
-  state.buffer=await state.audioContext.decodeAudioData(data);
-  state.duration=state.buffer.duration;
+  const buffer=await state.audioContext.decodeAudioData(data);
+  if(state.source){try{state.source.stop()}catch{}state.source=null}
+  clearSE();
+  state.buffer=buffer;
+  state.audioDuration=buffer.duration;
+  state.duration=Math.max(state.duration,state.audioDuration);
   state.pausedAt=0;
   state.playing=false;
 
@@ -1214,7 +1219,12 @@ async function playAudio(){
   source.buffer=state.buffer;
   source.connect(state.audioContext.destination);
 
-  const offset=Math.min(state.pausedAt,state.duration);
+  const audioDuration=state.audioDuration??state.buffer.duration;
+  const offset=Math.min(state.pausedAt,audioDuration);
+  if(offset>=audioDuration){
+    state.pausedAt=audioDuration;
+    return;
+  }
   source.start(0,offset);
 
   state.startedAt=state.audioContext.currentTime-offset;
@@ -1226,7 +1236,7 @@ async function playAudio(){
   source.onended=()=>{
     if(state.playing){
       state.playing=false;
-      state.pausedAt=state.duration;
+      state.pausedAt=state.audioDuration??state.buffer?.duration??state.duration;
       clearSE();
     }
   };
@@ -1353,13 +1363,16 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
     try{
       const d=JSON.parse(reader.result);
       state.bpm=Number(d.bpm)||120;
-      state.duration=Math.max(Number(d.duration)||60,60);
+      state.duration=Math.max(0,Number(d.duration)||0);
       state.notes=Array.isArray(d.notes)?d.notes:[];
       state.effects=Array.isArray(d.effects)?d.effects:[];
       state.effectTypes=Array.isArray(d.effectTypes)&&d.effectTypes.length?d.effectTypes:["effect"];
       state.activeEffectType=state.effectTypes[0];
       state.speeds=Array.isArray(d.speeds)?d.speeds:[];
       state.bpms=Array.isArray(d.bpms)?d.bpms:[];
+      if(state.audioDuration!==null){
+        state.duration=Math.max(state.duration,state.audioDuration);
+      }
       document.getElementById("bpmInput").value=state.bpm;
       state.selectedId=null;
       renderEffectTypes();renderSelection();resize();
@@ -1382,3 +1395,4 @@ resize();
 </script>
 </body>
 </html>
+
