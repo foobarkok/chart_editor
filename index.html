@@ -339,6 +339,12 @@ function speedColor(ratio){
 
 function draw(){
   const W=chartWidth(),H=chartHeight();
+
+  // === 可視領域（画面表示範囲）の計算 ===
+  const margin=50; // マージンを持たせて端でのチラつきを防止
+  const minY=Math.max(0, wrap.scrollTop - margin);
+  const maxY=Math.min(H, wrap.scrollTop + wrap.clientHeight + margin);
+
   ctx.clearRect(0,0,W,H);
   ctx.fillStyle="#0d0f14";ctx.fillRect(0,0,W,H);
 
@@ -414,7 +420,7 @@ function draw(){
   ctx.textAlign="center";
   ctx.fillText("波形",WAVE_CENTER,18);
 
-  // 縦波形の描画
+  // 縦波形の描画（可視領域内のみループ計算）
   if(state.buffer){
     const chanData=state.buffer.getChannelData(0);
     const sr=state.buffer.sampleRate;
@@ -425,8 +431,8 @@ function draw(){
     ctx.lineWidth=1;
     ctx.beginPath();
 
-    const startY=Math.max(0,Math.floor(TOP));
-    const endY=Math.min(H,Math.ceil(H));
+    const startY=Math.max(Math.floor(TOP), Math.floor(minY));
+    const endY=Math.min(Math.ceil(H), Math.ceil(maxY));
 
     for(let y=startY;y<endY;y+=2){
       const t1=yToTime(y);
@@ -466,18 +472,27 @@ function draw(){
     ctx.fillText("音声未読込",WAVE_CENTER,H/2);
   }
 
-  // 小節線・表拍線・裏拍線の描画
+  // === 小節線・表拍線・裏拍線の可視領域最適化 ===
   const maxT=Math.max(state.duration,MIN_CHART_SECONDS)+2;
   const maxBeats=timeToBeats(maxT);
   const snapVal=Number(document.getElementById("snapInput").value);
   const subDiv=snapVal>0?(snapVal/4):2;
   const totalSteps=Math.ceil(maxBeats*subDiv);
 
-  for(let i=0;i<=totalSteps;i++){
+  // 可視領域内の時間・拍数からループの開始・終了ステップを限定
+  const tMin=yToTime(minY);
+  const tMax=yToTime(maxY);
+  const beatMin=timeToBeats(tMin);
+  const beatMax=timeToBeats(tMax);
+
+  const startStep=Math.max(0, Math.floor(beatMin * subDiv) - 1);
+  const endStep=Math.min(totalSteps, Math.ceil(beatMax * subDiv) + 1);
+
+  for(let i=startStep;i<=endStep;i++){
     const beatIdx=i/subDiv;
     const t=beatsToTime(beatIdx);
     const y=timeToY(t);
-    if(y<0||y>H)continue;
+    if(y<minY||y>maxY)continue;
 
     const isBeat=Math.abs(beatIdx-Math.round(beatIdx))<0.0001;
     const roundedBeat=Math.round(beatIdx);
@@ -513,10 +528,10 @@ function draw(){
     }
   }
 
-  // BPM変更ノーツ
+  // BPM変更ノーツ（可視判定）
   for(const b of state.bpms){
     const y=timeToY(b.time);
-    if(y<0||y>H)continue;
+    if(y<minY-20||y>maxY+20)continue;
 
     const selected=b.id===state.selectedId;
 
@@ -537,14 +552,14 @@ function draw(){
     ctx.fillText(b.bpm,BPM_X+BPM_W/2,y+4);
   }
 
-  // 効果イベント描画（3列）
+  // 効果イベント描画（3列）（可視判定）
   for(const e of state.effects){
     const elane=e.lane!==undefined?e.lane:0;
     const ex=EFF_X+elane*(EFF_LANE_W+EFF_GAP)+4;
     const ey=timeToY(e.time);
     const ew=EFF_LANE_W-8;
 
-    if(ey<-20||ey>H+20)continue;
+    if(ey<minY-20||ey>maxY+20)continue;
 
     const selected=e.id===state.selectedId;
 
@@ -560,10 +575,10 @@ function draw(){
     ctx.fillText(e.name||"effect",ex+ew/2,ey+4);
   }
 
-  // 変速ノーツ
+  // 変速ノーツ（可視判定）
   for(const s of state.speeds){
     const y=timeToY(s.time);
-    if(y<0||y>H)continue;
+    if(y<minY-20||y>maxY+20)continue;
 
     const c=speedColor(s.ratio);
     const selected=s.id===state.selectedId;
@@ -585,12 +600,14 @@ function draw(){
     ctx.fillText((s.ratio===0.5?"1/2":s.ratio)+"x",SPD_X+SPD_W/2,y+4);
   }
 
-  // ノーツ
+  // ノーツ（可視判定）
   for(const n of state.notes){
     let x=LANES_X+n.lane*(LANE_W+GAP)+6;
     const y=timeToY(n.time);
     let width=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
-    if(y>H||y+(n.duration||0)*state.zoom<0)continue;
+    const h=n.kind==="hold"?Math.max(14,(n.duration||0)*state.zoom):18;
+
+    if(y+h<minY||y-9>maxY)continue;
 
     const selected=n.id===state.selectedId;
     
@@ -604,7 +621,6 @@ function draw(){
     ctx.lineWidth=selected?3:1;
 
     if(n.kind==="hold"){
-      const h=Math.max(14,n.duration*state.zoom);
       ctx.fillRect(x,y,width,h);
       ctx.strokeRect(x+.5,y+.5,width-1,h-1);
       ctx.fillStyle="#171a20";
@@ -619,11 +635,13 @@ function draw(){
     ctx.restore();
   }
 
-  // 再生ヘッド
+  // 再生ヘッド（可視判定）
   const ct=currentTime();
   const py=timeToY(ct);
-  ctx.strokeStyle="#fff";ctx.lineWidth=2;
-  ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(WAVE_X+WAVE_W,py);ctx.stroke();
+  if(py>=minY&&py<=maxY){
+    ctx.strokeStyle="#fff";ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(WAVE_X+WAVE_W,py);ctx.stroke();
+  }
 }
 
 function currentTime(){
@@ -1056,7 +1074,7 @@ function renderSelection(){
     editTime.value=+timeToBeats(b.time).toFixed(2);
     document.getElementById("editBpm").value=b.bpm;
   }else if(s){
-    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=true;editBpmGroup.hidden=true;
+    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=true;editBpmGroup.hidden=false;
     editLane.disabled=true;
     editTime.value=+timeToBeats(s.time).toFixed(2);
   }else if(e){
@@ -1303,8 +1321,9 @@ function chartData(){
 function saveJSON(){
   const blob=new Blob([JSON.stringify(chartData(),null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;a.download="chart.json";a.click();
+  const a=document.getElementById("saveButton");
+  const link=document.createElement("a");
+  link.href=url;link.download="chart.json";link.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
