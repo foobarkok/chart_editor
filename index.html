@@ -736,29 +736,25 @@ function hitTestEffect(x,y){
   return null;
 }
 
-function isNoteOverlapping(lane, time, width, ignoreId=null){
+function isNoteOverlapping(lane, time, width, duration=0, ignoreId=null){
   const newStartLane = lane;
   const newEndLane = lane + width - 1;
+  const newStartTime = time;
+  const newEndTime = time + Math.max(0, duration);
 
   for(const n of state.notes){
     if(ignoreId && n.id === ignoreId) continue;
 
     const nStartLane = n.lane;
     const nEndLane = n.lane + (n.width || 1) - 1;
-
     const laneOverlap = Math.max(newStartLane, nStartLane) <= Math.min(newEndLane, nEndLane);
     if(!laneOverlap) continue;
 
     const nStartTime = n.time;
-    const nEndTime = n.kind === "hold" ? n.time + (n.duration || 0) : n.time;
+    const nEndTime = n.kind === "hold" ? n.time + Math.max(0, n.duration || 0) : n.time;
+    const timeOverlap = Math.max(newStartTime, nStartTime) <= Math.min(newEndTime, nEndTime) + 0.0001;
 
-    if(Math.abs(nStartTime - time) < 0.0001) return true;
-
-    if(n.kind === "hold" && n.duration > 0){
-      if(time >= nStartTime - 0.0001 && time <= nEndTime + 0.0001){
-        return true;
-      }
-    }
+    if(timeOverlap) return true;
   }
   return false;
 }
@@ -770,7 +766,7 @@ function addNote(lane,time,duration=0){
   if(lane+width>6)return;
 
   const snappedTime=snapTime(time);
-  if(isNoteOverlapping(lane, snappedTime, width)) return;
+  if(isNoteOverlapping(lane, snappedTime, width, state.noteKind==="hold" ? Math.max(0,duration) : 0)) return;
 
   const n={
     id:Date.now().toString(36) + Math.random().toString(36).slice(2),
@@ -933,7 +929,7 @@ chart.addEventListener("pointerdown",e=>{
     const width=state.noteKind.startsWith("wide_")?2:1;
 
     if(lane+width>6)return;
-    if(isNoteOverlapping(lane, time, width)) return;
+    if(state.noteKind!=="hold" && isNoteOverlapping(lane, time, width, 0)) return;
 
     if(state.noteKind==="hold"){
       const snapVal=Number(document.getElementById("snapInput").value)||16;
@@ -1074,7 +1070,7 @@ function renderSelection(){
     editTime.value=+timeToBeats(b.time).toFixed(2);
     document.getElementById("editBpm").value=b.bpm;
   }else if(s){
-    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=true;editBpmGroup.hidden=false;
+    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=true;editBpmGroup.hidden=true;
     editLane.disabled=true;
     editTime.value=+timeToBeats(s.time).toFixed(2);
   }else if(e){
@@ -1096,11 +1092,30 @@ document.getElementById("applyEdit").addEventListener("click",()=>{
 
   if(n){
     const beatDur=Math.max(0,Number(document.getElementById("editDuration").value)||0);
-    n.time=beatsToTime(beatPos);
-    n.lane=Math.max(0,Math.min(5,Math.round(Number(document.getElementById("editLane").value)-1)));
-    n.duration=beatsToTime(beatDur);
-    n.kind=document.getElementById("editKind").value;
-    n.width=n.kind.startsWith("wide_")?2:1;
+    const newTime=beatsToTime(beatPos);
+    const newLane=Math.max(0,Math.min(5,Math.round(Number(document.getElementById("editLane").value)-1)));
+    const newKind=document.getElementById("editKind").value;
+    const newWidth=newKind.startsWith("wide_")?2:1;
+
+    if(newLane + newWidth > 6){
+      alert("幅2ノーツはレーン5〜6には配置できません。");
+      return;
+    }
+
+    const newDuration=newKind==="hold"
+      ? Math.max(0,beatsToTime(timeToBeats(newTime)+beatDur)-newTime)
+      : 0;
+
+    if(isNoteOverlapping(newLane,newTime,newWidth,newDuration,n.id)){
+      alert("その位置には他のノーツがあるため配置できません。");
+      return;
+    }
+
+    n.time=newTime;
+    n.lane=newLane;
+    n.duration=newDuration;
+    n.kind=newKind;
+    n.width=newWidth;
     state.duration=Math.max(state.duration,n.time+n.duration);
   }else if(b){
     b.time=beatsToTime(beatPos);
@@ -1356,10 +1371,7 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
 });
 
 document.getElementById("newButton").addEventListener("click",()=>{
-  stopAudio();
-  state.notes=[];state.effects=[];state.speeds=[];state.bpms=[];state.selectedId=null;
-  state.offset=0;state.pausedAt=0;state.duration=state.buffer?.duration||60;
-  renderEffectTypes();renderSelection();resize();
+  location.reload();
 });
 
 setKind("note", "tap_white");
