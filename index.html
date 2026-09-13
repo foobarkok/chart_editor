@@ -13,10 +13,11 @@ button{cursor:pointer}button:hover{background:#2b3140}
 .app{height:100%;display:grid;grid-template-rows:auto 1fr}
 .toolbar{display:flex;align-items:center;gap:7px;padding:7px 9px;background:#171a20;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .group{display:flex;align-items:center;gap:5px}.toolbar label,.small{font-size:11px;color:var(--muted)}.spacer{flex:1}
-.main{min-height:0;display:grid;grid-template-columns:200px 1fr 235px}
+.main{min-height:0;display:grid;grid-template-columns:200px 1fr 250px}
 .side,.right{background:var(--panel);padding:10px;overflow:auto}.side{border-right:1px solid var(--line)}.right{border-left:1px solid var(--line)}
-h3{font-size:13px;margin:4px 0 8px;color:#cbd1df}
-.mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:10px}
+h3{font-size:13px;margin:12px 0 6px;color:#cbd1df}
+h3:first-child{margin-top:4px}
+.mode-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:10px}
 .mode-grid button.active{background:#273653;outline:2px solid var(--accent)}
 .note-type{display:flex;align-items:center;gap:8px;padding:7px;border:1px solid #353b48;border-radius:5px;margin:5px 0;cursor:pointer}
 .note-type.active{background:#232c3e;border-color:var(--accent)}
@@ -29,7 +30,14 @@ h3{font-size:13px;margin:4px 0 8px;color:#cbd1df}
 .seek-row{position:absolute;left:0;right:0;bottom:0;top:0;display:flex;align-items:center;gap:7px;padding:4px 8px;background:#171a20}
 .seek-row input[type=range]{flex:1}.time{width:160px;text-align:right;font-variant-numeric:tabular-nums}
 .right input,.right select{width:100%;margin:3px 0 8px}
-.effect-row{display:flex;gap:4px;margin:4px 0}.effect-row input{margin:0}.effect-row input:first-child{width:70px}.effect-row input:nth-child(2){flex:1}.effect-row button{padding:4px 7px}
+
+.effect-type-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #3c3548;border-radius:6px;margin:6px 0;cursor:pointer;background:#181520;transition:background 0.15s, border-color 0.15s}
+.effect-type-item:hover{background:#221a2e}
+.effect-type-item.active{background:#2e2240;border-color:var(--purple);outline:1px solid var(--purple)}
+.effect-icon{font-size:15px;padding:0 2px;user-select:none;opacity:0.85;cursor:pointer}
+.effect-type-item input[type=text]{margin:0;padding:4px 7px;height:28px;flex:1}
+.effect-type-item button{padding:3px 8px;font-size:11px;flex:none}
+
 kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4px}
 .status{font-size:11px;color:var(--muted)}
 </style>
@@ -60,7 +68,6 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
     <button class="mode active" data-mode="place">配置</button>
     <button class="mode" data-mode="select">選択</button>
     <button class="mode" data-mode="erase">削除</button>
-    <button class="mode" data-mode="effect">効果</button>
   </div>
 
   <h3>ノーツ</h3>
@@ -80,15 +87,15 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
 
   <h3>操作</h3>
   <div class="info">
-    ノーツ種類を選択してから譜面をクリックすると配置します。<br>
-    配置モードですでにあるノーツをクリックすると削除できます。<br>
-    ロングはドラッグして長さを決めます。<br><br>
-    縦波形エリアをクリックするとその位置に飛べます。<br><br>
+    配置モードで譜面上をクリックすると選択中のノーツ/変速/効果を配置します。<br>
+    すでにノーツがある場所をクリックすると削除できます。<br>
+    ロングノーツはドラッグして長さを設定します。<br><br>
+    縦波形エリアをクリックするとその位置へジャンプします。<br><br>
     <kbd>0</kbd>〜<kbd>9</kbd>: 曲の0%〜90%地点へジャンプ<br>
     ホイール: 縦スクロール<br>
     <kbd>Shift</kbd> + ホイール: 横スクロール<br>
     <kbd>Space</kbd>: 再生/停止<br>
-    <kbd>Delete</kbd>: 選択削除<br>
+    <kbd>Delete</kbd>: 選択オブジェクト削除<br>
     <kbd>←</kbd><kbd>→</kbd>: 1スナップ移動
   </div>
 </aside>
@@ -109,24 +116,31 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
 </section>
 
 <aside class="right">
-  <h3>選択中のノーツ</h3>
-  <div id="selectionNone" class="info">ノーツを選択してください。</div>
+  <h3>効果の種類（マスター管理）</h3>
+  <div class="info">✨アイコンや枠をクリックして選択した効果が、「効果1〜3」レーンクリック時に配置されます。</div>
+  <div id="effectTypesList"></div>
+  <button id="addEffectTypeButton" style="width:100%;margin-top:4px">＋ 効果の種類を追加</button>
+
+  <h3>選択中のオブジェクト</h3>
+  <div id="selectionNone" class="info">オブジェクトを選択してください。</div>
   <div id="selectionPanel" hidden>
     <div class="small">位置 (拍)</div><input id="editTime" type="number" step=".01">
-    <div class="small">レーン (1〜6)</div><input id="editLane" type="number" min="1" max="6" step="1">
-    <div class="small">長さ (拍)</div><input id="editDuration" type="number" min="0" step=".01">
-    <div class="small">種類</div>
-    <select id="editKind">
-      <option value="tap_white">普通・白</option><option value="tap_yellow">普通・黄</option>
-      <option value="hold">ロング</option><option value="wide_red">幅2・赤</option><option value="wide_blue">幅2・青</option>
-    </select>
+    <div class="small">レーン (1〜6 / 効果1〜3)</div><input id="editLane" type="number" min="1" max="6" step="1">
+    <div id="editDurationGroup">
+      <div class="small">長さ (拍)</div><input id="editDuration" type="number" min="0" step=".01">
+    </div>
+    <div id="editKindGroup">
+      <div class="small">種類</div>
+      <select id="editKind">
+        <option value="tap_white">普通・白</option><option value="tap_yellow">普通・黄</option>
+        <option value="hold">ロング</option><option value="wide_red">幅2・赤</option><option value="wide_blue">幅2・青</option>
+      </select>
+    </div>
+    <div id="editNameGroup" hidden>
+      <div class="small">効果名</div><input id="editName" type="text">
+    </div>
     <button id="applyEdit">適用</button>
   </div>
-
-  <h3>効果イベント</h3>
-  <div class="info">右側に表示する効果を自由な文字列で登録できます。（位置は拍単位）</div>
-  <div id="effects"></div>
-  <button id="addEffect" style="width:100%">＋ 効果を追加</button>
 </aside>
 </main>
 </div>
@@ -136,7 +150,10 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
 
 const state={
   version:1,bpm:120,duration:60,
-  notes:[],effects:[],speeds:[],selectedId:null,
+  notes:[],speeds:[],effects:[],
+  effectTypes:["effect","fever","bg_change"],
+  activeEffectType:"effect",
+  selectedId:null,
   noteKind:"tap_white",speedKind:"speed_1",mode:"place",
   zoom:180,offset:0,
   audioContext:null,buffer:null,source:null,
@@ -153,17 +170,22 @@ const ctx=chart.getContext("2d");
 const BEAT_W=42;
 const LANE_W=92,GAP=3,TOP=30,MIN_CHART_SECONDS=60;
 const LANES_RIGHT=BEAT_W+6*(LANE_W+GAP)-GAP;
+
 const SPD_X=LANES_RIGHT+5;
-const SPD_W=60;
-const WAVE_X=SPD_X+SPD_W+10;
-const WAVE_W=80;
+const SPD_W=55;
+
+const EFF_LANE_W=65, EFF_GAP=3;
+const EFF_X=SPD_X+SPD_W+5;
+const EFF_RIGHT=EFF_X+3*(EFF_LANE_W+EFF_GAP)-EFF_GAP;
+
+const WAVE_X=EFF_RIGHT+10;
+const WAVE_W=75;
 const WAVE_CENTER=WAVE_X+WAVE_W/2;
-const EFFECT_X=WAVE_X+WAVE_W+15;
 
 function timeToBeats(t){return (t*state.bpm)/60}
 function beatsToTime(b){return (b*60)/state.bpm}
 
-function chartWidth(){return EFFECT_X+100}
+function chartWidth(){return WAVE_X+WAVE_W+20}
 function chartHeight(){
   const maxT=Math.max(state.duration,MIN_CHART_SECONDS)+2;
   return Math.max(500,(timeToDistance(maxT)+2)*state.zoom);
@@ -287,15 +309,32 @@ function draw(){
     ctx.fillText(String(lane+1),x+LANE_W/2,18);
   }
 
-  // 変速レーン
+  // 変速レーン（薄い青の太線枠）
   ctx.fillStyle="#151820";
   ctx.fillRect(SPD_X,0,SPD_W,H);
-  ctx.strokeStyle="#485266";
-  ctx.strokeRect(SPD_X+.5,.5,SPD_W-1,H-1);
+  ctx.strokeStyle="#5b9bd5";
+  ctx.lineWidth=3;
+  ctx.strokeRect(SPD_X+1.5,1.5,SPD_W-3,H-3);
+  ctx.lineWidth=1;
   ctx.fillStyle="#a3b0c9";
   ctx.font="11px system-ui";
   ctx.textAlign="center";
   ctx.fillText("変速",SPD_X+SPD_W/2,18);
+
+  // 効果レーン 3列描画（濃い緑の太線枠）
+  for(let elane=0;elane<3;elane++){
+    const ex=EFF_X+elane*(EFF_LANE_W+EFF_GAP);
+    ctx.fillStyle=elane%2?"#17131f":"#14111c";
+    ctx.fillRect(ex,0,EFF_LANE_W,H);
+    ctx.strokeStyle="#2d7d46";
+    ctx.lineWidth=3;
+    ctx.strokeRect(ex+1.5,1.5,EFF_LANE_W-3,H-3);
+    ctx.lineWidth=1;
+    ctx.fillStyle="#cbb2ff";
+    ctx.font="11px system-ui";
+    ctx.textAlign="center";
+    ctx.fillText("効果"+(elane+1),ex+EFF_LANE_W/2,18);
+  }
 
   // 縦向き波形レーン
   ctx.fillStyle="#11141a";
@@ -388,9 +427,8 @@ function draw(){
       ctx.lineWidth=0.8;
     }
 
-    ctx.beginPath();ctx.moveTo(BEAT_W,y+.5);ctx.lineTo(LANES_RIGHT,y+.5);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(BEAT_W,y+.5);ctx.lineTo(EFF_RIGHT,y+.5);ctx.stroke();
 
-    // 拍数文字表示（表拍のみ表示）
     if(isBeat){
       const measure=Math.floor(roundedBeat/4)+1;
       const beatInMeasure=(roundedBeat%4)+1;
@@ -400,9 +438,6 @@ function draw(){
         ctx.fillStyle="#8cb9ff";
         ctx.font="bold 11px system-ui";
         ctx.fillText(`${measure}.1`,BEAT_W-5,y+4);
-
-        ctx.fillStyle="#8e9bb3";ctx.font="10px system-ui";ctx.textAlign="left";
-        ctx.fillText("M"+measure,EFFECT_X-45,y+3);
       }else{
         ctx.fillStyle="#7b88a1";
         ctx.font="10px system-ui";
@@ -411,16 +446,27 @@ function draw(){
     }
   }
 
-  // 効果イベント
+  // 効果イベント描画（3列）
   for(const e of state.effects){
-    const y=timeToY(e.time);
-    if(y<0||y>H)continue;
+    const elane=e.lane!==undefined?e.lane:0;
+    const ex=EFF_X+elane*(EFF_LANE_W+EFF_GAP)+4;
+    const ey=timeToY(e.time);
+    const ew=EFF_LANE_W-8;
 
-    ctx.strokeStyle="#bd72ff";ctx.setLineDash([5,4]);
-    ctx.beginPath();ctx.moveTo(EFFECT_X-45,y);ctx.lineTo(EFFECT_X+50,y);ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle="#bd72ff";ctx.font="11px system-ui";ctx.textAlign="left";
-    ctx.fillText(e.name,EFFECT_X-40,y-4);
+    if(ey<-20||ey>H+20)continue;
+
+    const selected=e.id===state.selectedId;
+
+    ctx.fillStyle="#bd72ff";
+    ctx.strokeStyle=selected?"#fff":"rgba(255,255,255,.4)";
+    ctx.lineWidth=selected?2.5:1;
+
+    ctx.beginPath();ctx.roundRect(ex,ey-9,ew,18,4);ctx.fill();ctx.stroke();
+
+    ctx.fillStyle="#111";
+    ctx.font="bold 10px system-ui";
+    ctx.textAlign="center";
+    ctx.fillText(e.name||"effect",ex+ew/2,ey+4);
   }
 
   // 変速ノーツ
@@ -440,12 +486,12 @@ function draw(){
     ctx.fillStyle=c;
     ctx.strokeStyle=selected?"#fff":"rgba(0,0,0,0.4)";
     ctx.lineWidth=selected?2:1;
-    ctx.beginPath();ctx.roundRect(SPD_X+5,y-9,50,18,4);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.roundRect(SPD_X+4,y-9,SPD_W-8,18,4);ctx.fill();ctx.stroke();
 
     ctx.fillStyle="#111";
     ctx.font="bold 11px system-ui";
     ctx.textAlign="center";
-    ctx.fillText((s.ratio===0.5?"1/2":s.ratio)+"x",SPD_X+30,y+4);
+    ctx.fillText((s.ratio===0.5?"1/2":s.ratio)+"x",SPD_X+SPD_W/2,y+4);
   }
 
   // ノーツ
@@ -555,6 +601,21 @@ function hitTestSpeed(x,y){
   return null;
 }
 
+function hitTestEffect(x,y){
+  for(let i=state.effects.length-1;i>=0;i--){
+    const e=state.effects[i];
+    const elane=e.lane!==undefined?e.lane:0;
+    const ex=EFF_X+elane*(EFF_LANE_W+EFF_GAP)+4;
+    const ey=timeToY(e.time);
+    const ew=EFF_LANE_W-8;
+
+    if(x>=ex&&x<=ex+ew&&Math.abs(y-ey)<=10){
+      return e;
+    }
+  }
+  return null;
+}
+
 function isNoteOverlapping(lane, time, width, ignoreId=null){
   const newStartLane = lane;
   const newEndLane = lane + width - 1;
@@ -616,6 +677,23 @@ function addSpeedNote(time, ratio){
   };
   state.speeds.push(s);
   state.speeds.sort((a,b)=>a.time-b.time);
+  state.selectedId=s.id;
+  renderSelection();
+  draw();
+}
+
+function addEffectNote(lane, time, name){
+  const t=snapTime(time);
+  state.effects=state.effects.filter(e=>!(e.lane===lane && Math.abs(e.time-t)<0.0001));
+  const eff={
+    id:Date.now().toString(36)+Math.random().toString(36).slice(2),
+    lane:lane,
+    time:t,
+    name:name||"effect"
+  };
+  state.effects.push(eff);
+  state.selectedId=eff.id;
+  renderSelection();
   draw();
 }
 
@@ -633,10 +711,12 @@ chart.addEventListener("pointerdown",e=>{
 
   const hit=hitTest(x,y);
   const hitSpd=hitTestSpeed(x,y);
+  const hitEff=hitTestEffect(x,y);
 
   if(state.mode==="select"){
     if(hit) state.selectedId=hit.id;
     else if(hitSpd) state.selectedId=hitSpd.id;
+    else if(hitEff) state.selectedId=hitEff.id;
     else state.selectedId=null;
     renderSelection();draw();
     return;
@@ -645,20 +725,14 @@ chart.addEventListener("pointerdown",e=>{
   if(state.mode==="erase"){
     if(hit){
       state.notes=state.notes.filter(n=>n.id!==hit.id);
-      if(state.selectedId===hit.id)state.selectedId=null;
-      renderSelection();draw();
     }else if(hitSpd){
       state.speeds=state.speeds.filter(s=>s.id!==hitSpd.id);
-      if(state.selectedId===hitSpd.id)state.selectedId=null;
-      renderSelection();draw();
+    }else if(hitEff){
+      state.effects=state.effects.filter(ef=>ef.id!==hitEff.id);
     }
-    return;
-  }
-
-  if(state.mode==="effect"){
-    const t=snapTime(yToTime(y));
-    state.effects.push({id:crypto.randomUUID(),time:t,name:"effect"});
-    renderEffects();draw();
+    const delTarget = hit?.id || hitSpd?.id || hitEff?.id;
+    if(state.selectedId===delTarget) state.selectedId=null;
+    renderSelection();draw();
     return;
   }
 
@@ -669,21 +743,36 @@ chart.addEventListener("pointerdown",e=>{
       renderSelection();draw();
       return;
     }
-
     if(hit){
       state.notes=state.notes.filter(n=>n.id!==hit.id);
       if(state.selectedId===hit.id)state.selectedId=null;
       renderSelection();draw();
       return;
     }
+    if(hitEff){
+      state.effects=state.effects.filter(ef=>ef.id!==hitEff.id);
+      if(state.selectedId===hitEff.id)state.selectedId=null;
+      renderSelection();draw();
+      return;
+    }
 
-    // 変速レーンの判定
+    // 変速レーン判定
     if(x>=SPD_X&&x<=SPD_X+SPD_W){
       const ratio=parseFloat(state.speedKind.replace("speed_",""));
       addSpeedNote(yToTime(y), ratio);
       return;
     }
 
+    // 効果レーン（3列）判定
+    if(x>=EFF_X&&x<=EFF_RIGHT){
+      const elane=Math.floor((x-EFF_X)/(EFF_LANE_W+EFF_GAP));
+      if(elane>=0&&elane<3){
+        addEffectNote(elane, yToTime(y), state.activeEffectType);
+      }
+      return;
+    }
+
+    // 通常ノーツレーン判定
     if(x<BEAT_W)return;
     const lane=Math.floor((x-BEAT_W)/(LANE_W+GAP));
     if(lane<0||lane>=6)return;
@@ -740,68 +829,129 @@ function drawPreview(){
   ctx.globalAlpha=1;
 }
 
+function renderEffectTypes(){
+  const box=document.getElementById("effectTypesList");
+  box.innerHTML="";
+
+  state.effectTypes.forEach((typeStr, index)=>{
+    const item=document.createElement("div");
+    item.className="effect-type-item"+(typeStr===state.activeEffectType?" active":"");
+
+    const icon=document.createElement("span");
+    icon.className="effect-icon";
+    icon.textContent="✨";
+
+    const input=document.createElement("input");
+    input.type="text";
+    input.value=typeStr;
+
+    input.addEventListener("click",e=>e.stopPropagation());
+    input.addEventListener("change",()=>{
+      const oldVal=state.effectTypes[index];
+      const newVal=input.value.trim()||"effect";
+      state.effectTypes[index]=newVal;
+
+      if(state.activeEffectType===oldVal) state.activeEffectType=newVal;
+      state.effects.forEach(ef=>{ if(ef.name===oldVal) ef.name=newVal; });
+
+      renderEffectTypes();
+      draw();
+    });
+
+    const delBtn=document.createElement("button");
+    delBtn.textContent="×";
+    delBtn.addEventListener("click",e=>{
+      e.stopPropagation();
+      state.effectTypes.splice(index,1);
+      if(state.effectTypes.length===0) state.effectTypes=["effect"];
+      if(!state.effectTypes.includes(state.activeEffectType)){
+        state.activeEffectType=state.effectTypes[0];
+      }
+      renderEffectTypes();
+    });
+
+    item.addEventListener("click",()=>{
+      state.activeEffectType=state.effectTypes[index];
+      renderEffectTypes();
+      setMode("place");
+    });
+
+    item.append(icon,input,delBtn);
+    box.append(item);
+  });
+}
+
+document.getElementById("addEffectTypeButton").addEventListener("click",()=>{
+  const newName="effect_"+(state.effectTypes.length+1);
+  state.effectTypes.push(newName);
+  state.activeEffectType=newName;
+  renderEffectTypes();
+  setMode("place");
+});
+
 function renderSelection(){
   const n=state.notes.find(n=>n.id===state.selectedId);
+  const s=state.speeds.find(s=>s.id===state.selectedId);
+  const e=state.effects.find(e=>e.id===state.selectedId);
+
   const none=document.getElementById("selectionNone");
   const panel=document.getElementById("selectionPanel");
 
-  if(!n){none.hidden=false;panel.hidden=true;return}
+  if(!n && !s && !e){none.hidden=false;panel.hidden=true;return}
 
   none.hidden=true;panel.hidden=false;
-  document.getElementById("editTime").value=+timeToBeats(n.time).toFixed(2);
-  document.getElementById("editLane").value=n.lane+1;
-  document.getElementById("editDuration").value=+timeToBeats(n.duration||0).toFixed(2);
-  document.getElementById("editKind").value=n.kind;
+
+  const editTime=document.getElementById("editTime");
+  const editLane=document.getElementById("editLane");
+  const editDurGroup=document.getElementById("editDurationGroup");
+  const editKindGroup=document.getElementById("editKindGroup");
+  const editNameGroup=document.getElementById("editNameGroup");
+
+  if(n){
+    editDurGroup.hidden=false;editKindGroup.hidden=false;editNameGroup.hidden=true;
+    editLane.disabled=false;editLane.min=1;editLane.max=6;
+    editTime.value=+timeToBeats(n.time).toFixed(2);
+    editLane.value=n.lane+1;
+    document.getElementById("editDuration").value=+timeToBeats(n.duration||0).toFixed(2);
+    document.getElementById("editKind").value=n.kind;
+  }else if(s){
+    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=true;
+    editLane.disabled=true;
+    editTime.value=+timeToBeats(s.time).toFixed(2);
+  }else if(e){
+    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=false;
+    editLane.disabled=false;editLane.min=1;editLane.max=3;
+    editTime.value=+timeToBeats(e.time).toFixed(2);
+    editLane.value=(e.lane||0)+1;
+    document.getElementById("editName").value=e.name;
+  }
 }
 
 document.getElementById("applyEdit").addEventListener("click",()=>{
   const n=state.notes.find(n=>n.id===state.selectedId);
-  if(!n)return;
+  const s=state.speeds.find(s=>s.id===state.selectedId);
+  const e=state.effects.find(e=>e.id===state.selectedId);
 
   const beatPos=Math.max(0,Number(document.getElementById("editTime").value)||0);
-  const beatDur=Math.max(0,Number(document.getElementById("editDuration").value)||0);
 
-  n.time=beatsToTime(beatPos);
-  n.lane=Math.max(0,Math.min(5,Math.round(Number(document.getElementById("editLane").value)-1)));
-  n.duration=beatsToTime(beatDur);
-  n.kind=document.getElementById("editKind").value;
-  n.width=n.kind.startsWith("wide_")?2:1;
+  if(n){
+    const beatDur=Math.max(0,Number(document.getElementById("editDuration").value)||0);
+    n.time=beatsToTime(beatPos);
+    n.lane=Math.max(0,Math.min(5,Math.round(Number(document.getElementById("editLane").value)-1)));
+    n.duration=beatsToTime(beatDur);
+    n.kind=document.getElementById("editKind").value;
+    n.width=n.kind.startsWith("wide_")?2:1;
+    state.duration=Math.max(state.duration,n.time+n.duration);
+  }else if(s){
+    s.time=beatsToTime(beatPos);
+    state.speeds.sort((a,b)=>a.time-b.time);
+  }else if(e){
+    e.time=beatsToTime(beatPos);
+    e.lane=Math.max(0,Math.min(2,Math.round(Number(document.getElementById("editLane").value)-1)));
+    e.name=document.getElementById("editName").value.trim()||"effect";
+  }
 
-  state.duration=Math.max(state.duration,n.time+n.duration);
   resize();renderSelection();
-});
-
-function renderEffects(){
-  const box=document.getElementById("effects");
-  box.innerHTML="";
-
-  state.effects.forEach((effect,index)=>{
-    const row=document.createElement("div");row.className="effect-row";
-
-    const time=document.createElement("input");
-    time.type="number";time.step=".01";time.value=+timeToBeats(effect.time).toFixed(2);
-    time.title="位置 (拍)";
-
-    const name=document.createElement("input");name.value=effect.name;
-
-    const del=document.createElement("button");del.textContent="×";
-
-    time.addEventListener("change",()=>{
-      const b=Math.max(0,Number(time.value)||0);
-      effect.time=beatsToTime(b);draw();
-    });
-    name.addEventListener("input",()=>{effect.name=name.value;draw()});
-    del.addEventListener("click",()=>{
-      state.effects.splice(index,1);renderEffects();draw();
-    });
-
-    row.append(time,name,del);box.append(row);
-  });
-}
-
-document.getElementById("addEffect").addEventListener("click",()=>{
-  state.effects.push({id:crypto.randomUUID(),time:snapTime(currentTime()),name:"effect"});
-  renderEffects();draw();
 });
 
 async function initAudioContext(){
@@ -933,7 +1083,7 @@ seekInput.addEventListener("input",e=>{
 
 document.getElementById("bpmInput").addEventListener("change",e=>{
   state.bpm=Math.max(1,Number(e.target.value)||120);
-  resize();renderSelection();renderEffects();
+  resize();renderSelection();
 });
 
 document.getElementById("snapInput").addEventListener("change",()=>{
@@ -971,7 +1121,8 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Delete"&&state.selectedId){
     state.notes=state.notes.filter(n=>n.id!==state.selectedId);
     state.speeds=state.speeds.filter(s=>s.id!==state.selectedId);
-    state.selectedId=null;renderSelection();renderEffects();draw();
+    state.effects=state.effects.filter(ef=>ef.id!==state.selectedId);
+    state.selectedId=null;renderSelection();draw();
   }
   
   if(e.key==="ArrowLeft"||e.key==="ArrowRight"){
@@ -995,6 +1146,7 @@ function chartData(){
     duration:state.duration,
     notes:state.notes,
     effects:state.effects,
+    effectTypes:state.effectTypes,
     speeds:state.speeds
   };
 }
@@ -1021,10 +1173,12 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
       state.duration=Math.max(Number(d.duration)||60,60);
       state.notes=Array.isArray(d.notes)?d.notes:[];
       state.effects=Array.isArray(d.effects)?d.effects:[];
+      state.effectTypes=Array.isArray(d.effectTypes)&&d.effectTypes.length?d.effectTypes:["effect"];
+      state.activeEffectType=state.effectTypes[0];
       state.speeds=Array.isArray(d.speeds)?d.speeds:[];
       document.getElementById("bpmInput").value=state.bpm;
       state.selectedId=null;
-      renderSelection();renderEffects();resize();
+      renderEffectTypes();renderSelection();resize();
     }catch(err){
       console.error(err);alert("JSONの読み込みに失敗しました。");
     }
@@ -1036,13 +1190,13 @@ document.getElementById("newButton").addEventListener("click",()=>{
   stopAudio();
   state.notes=[];state.effects=[];state.speeds=[];state.selectedId=null;
   state.offset=0;state.pausedAt=0;state.duration=state.buffer?.duration||60;
-  renderSelection();renderEffects();resize();
+  renderEffectTypes();renderSelection();resize();
 });
 
 setKind("note", "tap_white");
 setKind("speed", "speed_1");
+renderEffectTypes();
 renderSelection();
-renderEffects();
 resize();
 </script>
 </body>
