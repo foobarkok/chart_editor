@@ -1,0 +1,1039 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>6-Lane Rhythm Chart Editor</title>
+<style>
+*{box-sizing:border-box}
+:root{--bg:#0f1116;--panel:#181b21;--panel2:#222731;--line:#485266;--text:#edf0f6;--muted:#929aaa;--accent:#70a7ff;--white:#f3f5f8;--blue:#4d8cff;--red:#ff5364;--purple:#bd72ff;--yellow:#ffea00}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font:14px system-ui,sans-serif}
+button,input,select{font:inherit;color:inherit;background:var(--panel2);border:1px solid #3c4351;border-radius:5px;padding:6px 9px}
+button{cursor:pointer}button:hover{background:#2b3140}
+.app{height:100%;display:grid;grid-template-rows:auto 1fr}
+.toolbar{display:flex;align-items:center;gap:7px;padding:7px 9px;background:#171a20;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.group{display:flex;align-items:center;gap:5px}.toolbar label,.small{font-size:11px;color:var(--muted)}.spacer{flex:1}
+.main{min-height:0;display:grid;grid-template-columns:200px 1fr 235px}
+.side,.right{background:var(--panel);padding:10px;overflow:auto}.side{border-right:1px solid var(--line)}.right{border-left:1px solid var(--line)}
+h3{font-size:13px;margin:4px 0 8px;color:#cbd1df}
+.mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:10px}
+.mode-grid button.active{background:#273653;outline:2px solid var(--accent)}
+.note-type{display:flex;align-items:center;gap:8px;padding:7px;border:1px solid #353b48;border-radius:5px;margin:5px 0;cursor:pointer}
+.note-type.active{background:#232c3e;border-color:var(--accent)}
+.swatch{width:17px;height:17px;border-radius:4px;border:1px solid #666;flex:none}
+.info{font-size:12px;color:var(--muted);line-height:1.55}
+.editor{position:relative;min-width:0;min-height:0;background:#0d0f14;overflow:hidden}
+.chart-scroll{position:absolute;inset:0 0 35px 0;overflow:auto;overscroll-behavior:contain}
+#chart{display:block}
+.editor-timeline{position:absolute;left:0;right:0;bottom:0;height:35px;background:#11141a;border-top:1px solid var(--line);z-index:5}
+.seek-row{position:absolute;left:0;right:0;bottom:0;top:0;display:flex;align-items:center;gap:7px;padding:4px 8px;background:#171a20}
+.seek-row input[type=range]{flex:1}.time{width:160px;text-align:right;font-variant-numeric:tabular-nums}
+.right input,.right select{width:100%;margin:3px 0 8px}
+.effect-row{display:flex;gap:4px;margin:4px 0}.effect-row input{margin:0}.effect-row input:first-child{width:70px}.effect-row input:nth-child(2){flex:1}.effect-row button{padding:4px 7px}
+kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4px}
+.status{font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="toolbar">
+  <button id="audioButton">🎵 音声を読み込む</button>
+  <input id="audioInput" type="file" accept="audio/*" hidden>
+  <button id="newButton">新規</button>
+  <button id="loadButton">JSON読込</button>
+  <button id="saveButton">JSON保存</button>
+  <input id="jsonInput" type="file" accept=".json,application/json" hidden>
+  <div class="group"><label>BPM</label><input id="bpmInput" type="number" min="1" step=".01" value="120" style="width:75px"></div>
+  <div class="group"><label>Snap</label><select id="snapInput">
+    <option value="0">なし</option><option value="4">1/4</option><option value="8">1/8</option>
+    <option value="12">1/12</option><option value="16" selected>1/16</option>
+    <option value="24">1/24</option><option value="32">1/32</option>
+  </select></div>
+  <button id="zoomOut">−</button><button id="zoomIn">＋</button>
+  <span class="spacer"></span><span id="status" class="status">準備完了</span>
+</header>
+
+<main class="main">
+<aside class="side">
+  <h3>編集モード</h3>
+  <div class="mode-grid">
+    <button class="mode active" data-mode="place">配置</button>
+    <button class="mode" data-mode="select">選択</button>
+    <button class="mode" data-mode="erase">削除</button>
+    <button class="mode" data-mode="effect">効果</button>
+  </div>
+
+  <h3>ノーツ</h3>
+  <div class="note-type active" data-kind="tap_white"><span class="swatch" style="background:#f3f5f8"></span>普通・白</div>
+  <div class="note-type" data-kind="tap_yellow"><span class="swatch" style="background:#ffea00"></span>普通・黄</div>
+  <div class="note-type" data-kind="hold"><span class="swatch" style="background:#f3f5f8"></span>ロング</div>
+  <div class="note-type" data-kind="wide_red"><span class="swatch" style="background:#ff5364"></span>幅2・赤</div>
+  <div class="note-type" data-kind="wide_blue"><span class="swatch" style="background:#4d8cff"></span>幅2・青</div>
+
+  <h3>変速ノーツ</h3>
+  <div class="note-type" data-kind="speed_0.5"><span class="swatch" style="background:#00e5ff"></span>変速 1/2倍</div>
+  <div class="note-type" data-kind="speed_1"><span class="swatch" style="background:#00e676"></span>変速 1倍</div>
+  <div class="note-type" data-kind="speed_1.5"><span class="swatch" style="background:#b2ff59"></span>変速 1.5倍</div>
+  <div class="note-type" data-kind="speed_2"><span class="swatch" style="background:#ffea00"></span>変速 2倍</div>
+  <div class="note-type" data-kind="speed_3"><span class="swatch" style="background:#ff9100"></span>変速 3倍</div>
+  <div class="note-type" data-kind="speed_4"><span class="swatch" style="background:#ff2a6d"></span>変速 4倍</div>
+
+  <h3>操作</h3>
+  <div class="info">
+    ノーツ種類を選択してから譜面をクリックすると配置します。<br>
+    配置モードですでにあるノーツをクリックすると削除できます。<br>
+    ロングはドラッグして長さを決めます。<br><br>
+    縦波形エリアをクリックするとその位置に飛べます。<br><br>
+    <kbd>0</kbd>〜<kbd>9</kbd>: 曲の0%〜90%地点へジャンプ<br>
+    ホイール: 縦スクロール<br>
+    <kbd>Shift</kbd> + ホイール: 横スクロール<br>
+    <kbd>Space</kbd>: 再生/停止<br>
+    <kbd>Delete</kbd>: 選択削除<br>
+    <kbd>←</kbd><kbd>→</kbd>: 1スナップ移動
+  </div>
+</aside>
+
+<section class="editor">
+  <div id="chartScroll" class="chart-scroll">
+    <canvas id="chart"></canvas>
+  </div>
+
+  <div class="editor-timeline">
+    <div class="seek-row">
+      <button id="playButton">▶</button>
+      <button id="stopButton">■</button>
+      <input id="seekInput" type="range" min="0" max="1" step=".0001" value="0">
+      <span id="timeLabel" class="time">0.0 拍 / 0.0 拍</span>
+    </div>
+  </div>
+</section>
+
+<aside class="right">
+  <h3>選択中のノーツ</h3>
+  <div id="selectionNone" class="info">ノーツを選択してください。</div>
+  <div id="selectionPanel" hidden>
+    <div class="small">位置 (拍)</div><input id="editTime" type="number" step=".01">
+    <div class="small">レーン (1〜6)</div><input id="editLane" type="number" min="1" max="6" step="1">
+    <div class="small">長さ (拍)</div><input id="editDuration" type="number" min="0" step=".01">
+    <div class="small">種類</div>
+    <select id="editKind">
+      <option value="tap_white">普通・白</option><option value="tap_yellow">普通・黄</option>
+      <option value="hold">ロング</option><option value="wide_red">幅2・赤</option><option value="wide_blue">幅2・青</option>
+    </select>
+    <button id="applyEdit">適用</button>
+  </div>
+
+  <h3>効果イベント</h3>
+  <div class="info">右側に表示する効果を自由な文字列で登録できます。（位置は拍単位）</div>
+  <div id="effects"></div>
+  <button id="addEffect" style="width:100%">＋ 効果を追加</button>
+</aside>
+</main>
+</div>
+
+<script>
+"use strict";
+
+const state={
+  version:1,bpm:120,duration:60,
+  notes:[],effects:[],speeds:[],selectedId:null,
+  noteKind:"tap_white",mode:"place",
+  zoom:180,offset:0,
+  audioContext:null,buffer:null,source:null,
+  playing:false,startedAt:0,pausedAt:0
+};
+
+let kickBuffer=null;
+let activeSENodes=[];
+
+const wrap=document.getElementById("chartScroll");
+const chart=document.getElementById("chart");
+const ctx=chart.getContext("2d");
+
+const BEAT_W=42;
+const LANE_W=92,GAP=3,TOP=30,MIN_CHART_SECONDS=60;
+const LANES_RIGHT=BEAT_W+6*(LANE_W+GAP)-GAP;
+const SPD_X=LANES_RIGHT+5;
+const SPD_W=60;
+const WAVE_X=SPD_X+SPD_W+10;
+const WAVE_W=80;
+const WAVE_CENTER=WAVE_X+WAVE_W/2;
+const EFFECT_X=WAVE_X+WAVE_W+15;
+
+function timeToBeats(t){return (t*state.bpm)/60}
+function beatsToTime(b){return (b*60)/state.bpm}
+
+function chartWidth(){return EFFECT_X+100}
+function chartHeight(){
+  const maxT=Math.max(state.duration,MIN_CHART_SECONDS)+2;
+  return Math.max(500,(timeToDistance(maxT)+2)*state.zoom);
+}
+
+function getSpeedMap(){
+  const list=[...state.speeds].sort((a,b)=>a.time-b.time);
+  const segments=[];
+
+  if(list.length===0||list[0].time>0){
+    segments.push({time:0,ratio:1.0,startD:0});
+  }
+
+  for(const s of list){
+    if(s.time<=0){
+      if(segments.length===0) segments.push({time:0,ratio:s.ratio,startD:0});
+      else segments[0].ratio=s.ratio;
+      continue;
+    }
+    const prev=segments[segments.length-1];
+    const dt=s.time-prev.time;
+    const d=prev.startD+dt*prev.ratio;
+    segments.push({id:s.id,time:s.time,ratio:s.ratio,startD:d});
+  }
+  return segments;
+}
+
+function timeToDistance(t){
+  if(t<=0)return 0;
+  const segments=getSpeedMap();
+  let seg=segments[0];
+  for(let i=0;i<segments.length;i++){
+    if(segments[i].time<=t) seg=segments[i];
+    else break;
+  }
+  return seg.startD+(t-seg.time)*seg.ratio;
+}
+
+function distanceToTime(d){
+  if(d<=0)return 0;
+  const segments=getSpeedMap();
+  let seg=segments[0];
+  for(let i=0;i<segments.length;i++){
+    if(segments[i].startD<=d) seg=segments[i];
+    else break;
+  }
+  return seg.time+(d-seg.startD)/seg.ratio;
+}
+
+function timeToY(t){
+  return TOP+(timeToDistance(t)-timeToDistance(state.offset))*state.zoom;
+}
+
+function yToTime(y){
+  const d=timeToDistance(state.offset)+(y-TOP)/state.zoom;
+  return distanceToTime(d);
+}
+
+function resize(){
+  const d=devicePixelRatio||1;
+
+  chart.width=chartWidth()*d;
+  chart.height=chartHeight()*d;
+  chart.style.width=chartWidth()+"px";
+  chart.style.height=chartHeight()+"px";
+  ctx.setTransform(d,0,0,d,0,0);
+
+  draw();
+}
+new ResizeObserver(resize).observe(wrap);
+
+function snapTime(t){
+  const div=Number(document.getElementById("snapInput").value);
+  if(!div)return Math.max(0,t);
+  const unit=(60/state.bpm)*4/div;
+  return Math.max(0,Math.round(t/unit)*unit);
+}
+
+function color(kind){
+  if(kind==="wide_red")return "#ff5364";
+  if(kind==="tap_yellow")return "#ffea00";
+  if(kind==="tap_blue"||kind==="wide_blue")return "#4d8cff";
+  return "#f3f5f8";
+}
+
+function speedColor(ratio){
+  if(ratio===0.5)return "#00e5ff";
+  if(ratio===1)return "#00e676";
+  if(ratio===1.5)return "#b2ff59";
+  if(ratio===2)return "#ffea00";
+  if(ratio===3)return "#ff9100";
+  if(ratio===4)return "#ff2a6d";
+  return "#ffffff";
+}
+
+function draw(){
+  const W=chartWidth(),H=chartHeight();
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle="#0d0f14";ctx.fillRect(0,0,W,H);
+
+  // 拍数表示レーン（左端）
+  ctx.fillStyle="#12151b";
+  ctx.fillRect(0,0,BEAT_W,H);
+  ctx.strokeStyle="#485266";
+  ctx.strokeRect(.5,.5,BEAT_W-1,H-1);
+  ctx.fillStyle="#a3b0c9";
+  ctx.font="11px system-ui";
+  ctx.textAlign="center";
+  ctx.fillText("拍",BEAT_W/2,18);
+
+  // 1〜6レーン描画
+  for(let lane=0;lane<6;lane++){
+    const x=BEAT_W+lane*(LANE_W+GAP);
+    ctx.fillStyle=lane%2?"#151820":"#12151b";
+    ctx.fillRect(x,0,LANE_W,H);
+    ctx.strokeStyle="#485266";
+    ctx.strokeRect(x+.5,.5,LANE_W-1,H-1);
+    ctx.fillStyle="#a3b0c9";
+    ctx.font="11px system-ui";
+    ctx.textAlign="center";
+    ctx.fillText(String(lane+1),x+LANE_W/2,18);
+  }
+
+  // 変速レーン
+  ctx.fillStyle="#151820";
+  ctx.fillRect(SPD_X,0,SPD_W,H);
+  ctx.strokeStyle="#485266";
+  ctx.strokeRect(SPD_X+.5,.5,SPD_W-1,H-1);
+  ctx.fillStyle="#a3b0c9";
+  ctx.font="11px system-ui";
+  ctx.textAlign="center";
+  ctx.fillText("変速",SPD_X+SPD_W/2,18);
+
+  // 縦向き波形レーン
+  ctx.fillStyle="#11141a";
+  ctx.fillRect(WAVE_X,0,WAVE_W,H);
+  ctx.strokeStyle="#485266";
+  ctx.strokeRect(WAVE_X+.5,.5,WAVE_W-1,H-1);
+  ctx.fillStyle="#a3b0c9";
+  ctx.font="11px system-ui";
+  ctx.textAlign="center";
+  ctx.fillText("波形",WAVE_CENTER,18);
+
+  // 縦波形の描画
+  if(state.buffer){
+    const chanData=state.buffer.getChannelData(0);
+    const sr=state.buffer.sampleRate;
+    const totalSamples=chanData.length;
+    const halfW=(WAVE_W-8)/2;
+
+    ctx.strokeStyle="#4d8cff";
+    ctx.lineWidth=1;
+    ctx.beginPath();
+
+    const startY=Math.max(0,Math.floor(TOP));
+    const endY=Math.min(H,Math.ceil(H));
+
+    for(let y=startY;y<endY;y+=2){
+      const t1=yToTime(y);
+      const t2=yToTime(y+2);
+
+      if(t1>state.duration&&t2>state.duration)continue;
+
+      let s1=Math.floor(t1*sr);
+      let s2=Math.floor(t2*sr);
+
+      if(s1<0)s1=0;
+      if(s2>=totalSamples)s2=totalSamples-1;
+      if(s1>s2){const tmp=s1;s1=s2;s2=tmp;}
+
+      if(s1>=totalSamples||s2<0)continue;
+
+      let min=1.0,max=-1.0;
+      const step=Math.max(1,Math.floor((s2-s1+1)/15));
+      for(let s=s1;s<=s2;s+=step){
+        const val=chanData[s];
+        if(val<min)min=val;
+        if(val>max)max=val;
+      }
+
+      if(min<=max){
+        const x1=WAVE_CENTER+min*halfW;
+        const x2=WAVE_CENTER+max*halfW;
+        ctx.moveTo(x1,y+.5);
+        ctx.lineTo(x2,y+.5);
+      }
+    }
+    ctx.stroke();
+  }else{
+    ctx.fillStyle="#687388";
+    ctx.font="11px system-ui";
+    ctx.textAlign="center";
+    ctx.fillText("音声未読込",WAVE_CENTER,H/2);
+  }
+
+  // 小節線・表拍線・裏拍線の描画
+  const beat=60/state.bpm;
+  const maxT=Math.max(state.duration,MIN_CHART_SECONDS)+2;
+  const snapVal=Number(document.getElementById("snapInput").value);
+  const subDiv=snapVal>0?(snapVal/4):2;
+  const stepT=beat/subDiv;
+  const totalSteps=Math.ceil(maxT/stepT);
+
+  for(let i=0;i<=totalSteps;i++){
+    const t=i*stepT;
+    const y=timeToY(t);
+    if(y<0||y>H)continue;
+
+    const beatIdx=i/subDiv;
+    const isBeat=Math.abs(beatIdx-Math.round(beatIdx))<0.0001;
+    const roundedBeat=Math.round(beatIdx);
+    const isMeasure=isBeat&&(roundedBeat%4===0);
+
+    if(isMeasure){
+      ctx.strokeStyle="#74819a";
+      ctx.lineWidth=1.5;
+    }else if(isBeat){
+      ctx.strokeStyle="#4e5970";
+      ctx.lineWidth=1.0;
+    }else{
+      ctx.strokeStyle="#333c4e";
+      ctx.lineWidth=0.8;
+    }
+
+    ctx.beginPath();ctx.moveTo(BEAT_W,y+.5);ctx.lineTo(LANES_RIGHT,y+.5);ctx.stroke();
+
+    // 拍数文字表示（表拍のみ表示）
+    if(isBeat){
+      const measure=Math.floor(roundedBeat/4)+1;
+      const beatInMeasure=(roundedBeat%4)+1;
+      ctx.textAlign="right";
+
+      if(isMeasure){
+        ctx.fillStyle="#8cb9ff";
+        ctx.font="bold 11px system-ui";
+        ctx.fillText(`${measure}.1`,BEAT_W-5,y+4);
+
+        ctx.fillStyle="#8e9bb3";ctx.font="10px system-ui";ctx.textAlign="left";
+        ctx.fillText("M"+measure,EFFECT_X-45,y+3);
+      }else{
+        ctx.fillStyle="#7b88a1";
+        ctx.font="10px system-ui";
+        ctx.fillText(`${measure}.${beatInMeasure}`,BEAT_W-5,y+3);
+      }
+    }
+  }
+
+  // 効果イベント
+  for(const e of state.effects){
+    const y=timeToY(e.time);
+    if(y<0||y>H)continue;
+
+    ctx.strokeStyle="#bd72ff";ctx.setLineDash([5,4]);
+    ctx.beginPath();ctx.moveTo(EFFECT_X-45,y);ctx.lineTo(EFFECT_X+50,y);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle="#bd72ff";ctx.font="11px system-ui";ctx.textAlign="left";
+    ctx.fillText(e.name,EFFECT_X-40,y-4);
+  }
+
+  // 変速ノーツ
+  for(const s of state.speeds){
+    const y=timeToY(s.time);
+    if(y<0||y>H)continue;
+
+    const c=speedColor(s.ratio);
+    const selected=s.id===state.selectedId;
+
+    ctx.strokeStyle=c;
+    ctx.lineWidth=selected?2.5:1.5;
+    ctx.setLineDash([4,2]);
+    ctx.beginPath();ctx.moveTo(BEAT_W,y);ctx.lineTo(SPD_X,y);ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle=c;
+    ctx.strokeStyle=selected?"#fff":"rgba(0,0,0,0.4)";
+    ctx.lineWidth=selected?2:1;
+    ctx.beginPath();ctx.roundRect(SPD_X+5,y-9,50,18,4);ctx.fill();ctx.stroke();
+
+    ctx.fillStyle="#111";
+    ctx.font="bold 11px system-ui";
+    ctx.textAlign="center";
+    ctx.fillText((s.ratio===0.5?"1/2":s.ratio)+"x",SPD_X+30,y+4);
+  }
+
+  // ノーツ
+  for(const n of state.notes){
+    let x=BEAT_W+n.lane*(LANE_W+GAP)+6;
+    const y=timeToY(n.time);
+    let width=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
+    if(y>H||y+(n.duration||0)*state.zoom<0)continue;
+
+    const selected=n.id===state.selectedId;
+    ctx.fillStyle=color(n.kind);
+    ctx.strokeStyle=selected?"#fff":"rgba(255,255,255,.4)";
+    ctx.lineWidth=selected?3:1;
+
+    if(n.kind==="hold"){
+      const h=Math.max(14,n.duration*state.zoom);
+      ctx.fillRect(x,y,width,h);
+      ctx.strokeRect(x+.5,y+.5,width-1,h-1);
+      ctx.fillStyle="#171a20";
+      ctx.fillRect(x+width/2-2,y+7,4,Math.max(0,h-14));
+    }else{
+      if(n.kind==="tap_yellow"){
+        x += 8;
+        width -= 16;
+      }
+      ctx.beginPath();ctx.roundRect(x,y-9,width,18,5);ctx.fill();ctx.stroke();
+    }
+  }
+
+  // 再生ヘッド
+  const ct=currentTime();
+  const py=timeToY(ct);
+  ctx.strokeStyle="#fff";ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(WAVE_X+WAVE_W,py);ctx.stroke();
+}
+
+function currentTime(){
+  if(!state.playing||!state.audioContext)return state.pausedAt;
+  return Math.max(0,Math.min(state.duration,state.audioContext.currentTime-state.startedAt));
+}
+
+function updateUI(){
+  const t=currentTime();
+  const currentBeats=timeToBeats(t);
+  const totalBeats=timeToBeats(state.duration);
+  document.getElementById("timeLabel").textContent=currentBeats.toFixed(1)+" 拍 / "+totalBeats.toFixed(1)+" 拍 ("+t.toFixed(1)+"s)";
+  document.getElementById("seekInput").value=state.duration?t/state.duration:0;
+  draw();
+}
+
+function loop(){updateUI();requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+
+function setMode(mode){
+  state.mode=mode;
+  document.querySelectorAll(".mode").forEach(b=>b.classList.toggle("active",b.dataset.mode===mode));
+}
+
+function setKind(kind){
+  state.noteKind=kind;
+  document.querySelectorAll(".note-type").forEach(b=>b.classList.toggle("active",b.dataset.kind===kind));
+  setMode("place");
+}
+
+document.querySelectorAll(".mode").forEach(b=>b.addEventListener("click",()=>setMode(b.dataset.mode)));
+document.querySelectorAll(".note-type").forEach(b=>b.addEventListener("click",()=>setKind(b.dataset.kind)));
+
+function hitTest(x,y){
+  for(let i=state.notes.length-1;i>=0;i--){
+    const n=state.notes[i];
+    let nx=BEAT_W+n.lane*(LANE_W+GAP)+6,ny=timeToY(n.time);
+    let nw=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
+
+    if(n.kind==="hold"){
+      const nh=Math.max(14,(n.duration||0)*state.zoom);
+      if(x>=nx&&x<=nx+nw&&y>=ny&&y<=ny+nh)return n;
+    }else{
+      if(n.kind==="tap_yellow"){
+        nx += 8;
+        nw -= 16;
+      }
+      if(x>=nx&&x<=nx+nw&&y>=ny-9&&y<=ny+9)return n;
+    }
+  }
+  return null;
+}
+
+function hitTestSpeed(x,y){
+  for(let i=state.speeds.length-1;i>=0;i--){
+    const s=state.speeds[i];
+    const sy=timeToY(s.time);
+    if(x>=SPD_X&&x<=SPD_X+SPD_W&&Math.abs(y-sy)<=10){
+      return s;
+    }
+  }
+  return null;
+}
+
+function isNoteOverlapping(lane, time, width, ignoreId=null){
+  const newStartLane = lane;
+  const newEndLane = lane + width - 1;
+
+  for(const n of state.notes){
+    if(ignoreId && n.id === ignoreId) continue;
+
+    const nStartLane = n.lane;
+    const nEndLane = n.lane + (n.width || 1) - 1;
+
+    const laneOverlap = Math.max(newStartLane, nStartLane) <= Math.min(newEndLane, nEndLane);
+    if(!laneOverlap) continue;
+
+    const nStartTime = n.time;
+    const nEndTime = n.kind === "hold" ? n.time + (n.duration || 0) : n.time;
+
+    if(Math.abs(nStartTime - time) < 0.0001) return true;
+
+    if(n.kind === "hold" && n.duration > 0){
+      if(time >= nStartTime - 0.0001 && time <= nEndTime + 0.0001){
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function addNote(lane,time,duration=0){
+  if(lane<0||lane>=6)return;
+
+  const width=state.noteKind.startsWith("wide_")?2:1;
+  if(lane+width>6)return;
+
+  const snappedTime=snapTime(time);
+  if(isNoteOverlapping(lane, snappedTime, width)) return;
+
+  const n={
+    id:Date.now().toString(36) + Math.random().toString(36).slice(2),
+    time:snappedTime,
+    lane,
+    width,
+    kind:state.noteKind,
+    duration:state.noteKind==="hold"?Math.max(0,duration):0
+  };
+
+  state.notes.push(n);
+  state.selectedId=n.id;
+  renderSelection();
+  draw();
+}
+
+function addSpeedNote(time, ratio){
+  const t=snapTime(time);
+  state.speeds=state.speeds.filter(s=>Math.abs(s.time-t)>0.0001);
+  const s={
+    id:Date.now().toString(36)+Math.random().toString(36).slice(2),
+    time:t,
+    ratio:ratio
+  };
+  state.speeds.push(s);
+  state.speeds.sort((a,b)=>a.time-b.time);
+  draw();
+}
+
+let holdDrag=null;
+
+chart.addEventListener("pointerdown",e=>{
+  const r=chart.getBoundingClientRect();
+  const x=e.clientX-r.left;
+  const y=e.clientY-r.top;
+
+  if(x>=WAVE_X&&x<=WAVE_X+WAVE_W){
+    seekTo(yToTime(y));
+    return;
+  }
+
+  const hit=hitTest(x,y);
+  const hitSpd=hitTestSpeed(x,y);
+
+  if(state.mode==="select"){
+    if(hit) state.selectedId=hit.id;
+    else if(hitSpd) state.selectedId=hitSpd.id;
+    else state.selectedId=null;
+    renderSelection();draw();
+    return;
+  }
+
+  if(state.mode==="erase"){
+    if(hit){
+      state.notes=state.notes.filter(n=>n.id!==hit.id);
+      if(state.selectedId===hit.id)state.selectedId=null;
+      renderSelection();draw();
+    }else if(hitSpd){
+      state.speeds=state.speeds.filter(s=>s.id!==hitSpd.id);
+      if(state.selectedId===hitSpd.id)state.selectedId=null;
+      renderSelection();draw();
+    }
+    return;
+  }
+
+  if(state.mode==="effect"){
+    const t=snapTime(yToTime(y));
+    state.effects.push({id:crypto.randomUUID(),time:t,name:"effect"});
+    renderEffects();draw();
+    return;
+  }
+
+  if(state.mode==="place"){
+    if(hitSpd){
+      state.speeds=state.speeds.filter(s=>s.id!==hitSpd.id);
+      if(state.selectedId===hitSpd.id)state.selectedId=null;
+      renderSelection();draw();
+      return;
+    }
+
+    if(hit){
+      state.notes=state.notes.filter(n=>n.id!==hit.id);
+      if(state.selectedId===hit.id)state.selectedId=null;
+      renderSelection();draw();
+      return;
+    }
+
+    if(state.noteKind.startsWith("speed_")||(x>=SPD_X&&x<=SPD_X+SPD_W)){
+      let ratio=1;
+      if(state.noteKind.startsWith("speed_")){
+        ratio=parseFloat(state.noteKind.replace("speed_",""));
+      }
+      addSpeedNote(yToTime(y), ratio);
+      return;
+    }
+
+    if(x<BEAT_W)return;
+    const lane=Math.floor((x-BEAT_W)/(LANE_W+GAP));
+    if(lane<0||lane>=6)return;
+
+    const time=snapTime(yToTime(y));
+    const width=state.noteKind.startsWith("wide_")?2:1;
+
+    if(lane+width>6)return;
+    if(isNoteOverlapping(lane, time, width)) return;
+
+    if(state.noteKind==="hold"){
+      holdDrag={lane,time,startY:y,duration:60/state.bpm};
+      chart.setPointerCapture(e.pointerId);
+      drawPreview();
+    }else{
+      addNote(lane,time);
+    }
+  }
+});
+
+chart.addEventListener("pointermove",e=>{
+  if(!holdDrag)return;
+  const r=chart.getBoundingClientRect();
+  const y=e.clientY-r.top;
+  holdDrag.duration=Math.max(
+    60/state.bpm,
+    snapTime(yToTime(y))-holdDrag.time
+  );
+  drawPreview();
+});
+
+chart.addEventListener("pointerup",()=>{
+  if(!holdDrag)return;
+  addNote(holdDrag.lane,holdDrag.time,holdDrag.duration);
+  holdDrag=null;
+  draw();
+});
+
+chart.addEventListener("pointercancel",()=>{
+  holdDrag=null;draw();
+});
+
+function drawPreview(){
+  draw();
+  if(!holdDrag)return;
+
+  const x=BEAT_W+holdDrag.lane*(LANE_W+GAP)+6;
+  const y=timeToY(holdDrag.time);
+  const h=Math.max(14,holdDrag.duration*state.zoom);
+
+  ctx.globalAlpha=.7;
+  ctx.fillStyle="#f3f5f8";
+  ctx.fillRect(x,y,LANE_W-12,h);
+  ctx.globalAlpha=1;
+}
+
+function renderSelection(){
+  const n=state.notes.find(n=>n.id===state.selectedId);
+  const none=document.getElementById("selectionNone");
+  const panel=document.getElementById("selectionPanel");
+
+  if(!n){none.hidden=false;panel.hidden=true;return}
+
+  none.hidden=true;panel.hidden=false;
+  document.getElementById("editTime").value=+timeToBeats(n.time).toFixed(2);
+  document.getElementById("editLane").value=n.lane+1;
+  document.getElementById("editDuration").value=+timeToBeats(n.duration||0).toFixed(2);
+  document.getElementById("editKind").value=n.kind;
+}
+
+document.getElementById("applyEdit").addEventListener("click",()=>{
+  const n=state.notes.find(n=>n.id===state.selectedId);
+  if(!n)return;
+
+  const beatPos=Math.max(0,Number(document.getElementById("editTime").value)||0);
+  const beatDur=Math.max(0,Number(document.getElementById("editDuration").value)||0);
+
+  n.time=beatsToTime(beatPos);
+  n.lane=Math.max(0,Math.min(5,Math.round(Number(document.getElementById("editLane").value)-1)));
+  n.duration=beatsToTime(beatDur);
+  n.kind=document.getElementById("editKind").value;
+  n.width=n.kind.startsWith("wide_")?2:1;
+
+  state.duration=Math.max(state.duration,n.time+n.duration);
+  resize();renderSelection();
+});
+
+function renderEffects(){
+  const box=document.getElementById("effects");
+  box.innerHTML="";
+
+  state.effects.forEach((effect,index)=>{
+    const row=document.createElement("div");row.className="effect-row";
+
+    const time=document.createElement("input");
+    time.type="number";time.step=".01";time.value=+timeToBeats(effect.time).toFixed(2);
+    time.title="位置 (拍)";
+
+    const name=document.createElement("input");name.value=effect.name;
+
+    const del=document.createElement("button");del.textContent="×";
+
+    time.addEventListener("change",()=>{
+      const b=Math.max(0,Number(time.value)||0);
+      effect.time=beatsToTime(b);draw();
+    });
+    name.addEventListener("input",()=>{effect.name=name.value;draw()});
+    del.addEventListener("click",()=>{
+      state.effects.splice(index,1);renderEffects();draw();
+    });
+
+    row.append(time,name,del);box.append(row);
+  });
+}
+
+document.getElementById("addEffect").addEventListener("click",()=>{
+  state.effects.push({id:crypto.randomUUID(),time:snapTime(currentTime()),name:"effect"});
+  renderEffects();draw();
+});
+
+async function initAudioContext(){
+  if(!state.audioContext) state.audioContext=new (window.AudioContext||window.webkitAudioContext)();
+  if(state.audioContext.state==="suspended") await state.audioContext.resume();
+
+  if(!kickBuffer){
+    try{
+      const res=await fetch("kick.wav");
+      if(res.ok){
+        const ab=await res.arrayBuffer();
+        kickBuffer=await state.audioContext.decodeAudioData(ab);
+      }
+    }catch(e){
+      console.warn("kick.wavの読み込みに失敗しました",e);
+    }
+  }
+}
+
+function clearSE(){
+  activeSENodes.forEach(node=>{
+    try{node.stop()}catch{}
+  });
+  activeSENodes=[];
+}
+
+function scheduleNotesSE(startSec){
+  clearSE();
+  if(!kickBuffer||!state.audioContext)return;
+
+  const nowCtx=state.audioContext.currentTime;
+  for(const n of state.notes){
+    if(n.kind==="tap_yellow") continue;
+    if(n.time>=startSec){
+      const delay=n.time-startSec;
+      const seSource=state.audioContext.createBufferSource();
+      seSource.buffer=kickBuffer;
+      seSource.connect(state.audioContext.destination);
+      seSource.start(nowCtx+delay);
+      activeSENodes.push(seSource);
+    }
+  }
+}
+
+async function loadAudio(file){
+  await initAudioContext();
+
+  const data=await file.arrayBuffer();
+  state.buffer=await state.audioContext.decodeAudioData(data);
+  state.duration=state.buffer.duration;
+  state.pausedAt=0;
+  state.playing=false;
+
+  document.getElementById("status").textContent=file.name;
+  resize();
+}
+
+document.getElementById("audioButton").addEventListener("click",()=>document.getElementById("audioInput").click());
+document.getElementById("audioInput").addEventListener("change",e=>{
+  const file=e.target.files[0];
+  if(file)loadAudio(file).catch(err=>{
+    console.error(err);
+    document.getElementById("status").textContent="音声読み込み失敗";
+  });
+});
+
+async function playAudio(){
+  if(!state.buffer)return;
+
+  if(state.playing){
+    state.pausedAt=currentTime();
+    state.playing=false;
+    if(state.source){try{state.source.stop()}catch{}state.source=null}
+    clearSE();
+    return;
+  }
+
+  await initAudioContext();
+
+  const source=state.audioContext.createBufferSource();
+  source.buffer=state.buffer;
+  source.connect(state.audioContext.destination);
+
+  const offset=Math.min(state.pausedAt,state.duration);
+  source.start(0,offset);
+
+  state.startedAt=state.audioContext.currentTime-offset;
+  state.source=source;
+  state.playing=true;
+
+  scheduleNotesSE(offset);
+
+  source.onended=()=>{
+    if(state.playing){
+      state.playing=false;
+      state.pausedAt=state.duration;
+      clearSE();
+    }
+  };
+}
+
+function stopAudio(){
+  if(state.source){try{state.source.stop()}catch{}state.source=null}
+  state.playing=false;state.pausedAt=0;
+  clearSE();
+}
+
+function seekTo(t){
+  t=Math.max(0,Math.min(state.duration,t));
+
+  if(state.source){
+    try{state.source.stop()}catch{}
+    state.source=null;
+  }
+  state.playing=false;
+  state.pausedAt=t;
+  clearSE();
+
+  draw();
+}
+
+document.getElementById("playButton").addEventListener("click",playAudio);
+document.getElementById("stopButton").addEventListener("click",()=>{stopAudio();draw()});
+
+const seekInput=document.getElementById("seekInput");
+seekInput.addEventListener("input",e=>{
+  seekTo(Number(e.target.value)*state.duration);
+});
+
+document.getElementById("bpmInput").addEventListener("change",e=>{
+  state.bpm=Math.max(1,Number(e.target.value)||120);
+  resize();renderSelection();renderEffects();
+});
+
+document.getElementById("snapInput").addEventListener("change",()=>{
+  draw();
+});
+
+document.getElementById("zoomIn").addEventListener("click",()=>{
+  state.zoom=Math.min(1000,state.zoom*1.25);resize();
+});
+
+document.getElementById("zoomOut").addEventListener("click",()=>{
+  state.zoom=Math.max(30,state.zoom/1.25);resize();
+});
+
+wrap.addEventListener("wheel",e=>{
+  if(e.shiftKey){
+    wrap.scrollLeft+=e.deltaY;
+  }else{
+    wrap.scrollTop+=e.deltaY;
+  }
+  e.preventDefault();
+},{passive:false});
+
+document.addEventListener("keydown",e=>{
+  if(e.target.matches("input,select"))return;
+
+  if(!e.ctrlKey && !e.altKey && !e.metaKey && e.key >= "0" && e.key <= "9"){
+    e.preventDefault();
+    const percent = parseInt(e.key, 10) * 0.1;
+    seekTo(state.duration * percent);
+    return;
+  }
+
+  if(e.code==="Space"){e.preventDefault();playAudio()}
+  if(e.key==="Delete"&&state.selectedId){
+    state.notes=state.notes.filter(n=>n.id!==state.selectedId);
+    state.speeds=state.speeds.filter(s=>s.id!==state.selectedId);
+    state.selectedId=null;renderSelection();renderEffects();draw();
+  }
+  
+  if(e.key==="ArrowLeft"||e.key==="ArrowRight"){
+    e.preventDefault();
+    const snap=Number(document.getElementById("snapInput").value);
+    const stepBeats=snap>0?(4/snap):1;
+    const stepSec=stepBeats*(60/state.bpm);
+    const dir=e.key==="ArrowLeft"?-1:1;
+    seekTo(currentTime()+dir*stepSec);
+  }
+
+  if(e.ctrlKey&&e.key.toLowerCase()==="s"){
+    e.preventDefault();saveJSON();
+  }
+});
+
+function chartData(){
+  return {
+    version:state.version,
+    bpm:state.bpm,
+    duration:state.duration,
+    notes:state.notes,
+    effects:state.effects,
+    speeds:state.speeds
+  };
+}
+
+function saveJSON(){
+  const blob=new Blob([JSON.stringify(chartData(),null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download="chart.json";a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+document.getElementById("saveButton").addEventListener("click",saveJSON);
+
+document.getElementById("loadButton").addEventListener("click",()=>document.getElementById("jsonInput").click());
+document.getElementById("jsonInput").addEventListener("change",e=>{
+  const file=e.target.files[0];if(!file)return;
+
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const d=JSON.parse(reader.result);
+      state.bpm=Number(d.bpm)||120;
+      state.duration=Math.max(Number(d.duration)||60,60);
+      state.notes=Array.isArray(d.notes)?d.notes:[];
+      state.effects=Array.isArray(d.effects)?d.effects:[];
+      state.speeds=Array.isArray(d.speeds)?d.speeds:[];
+      document.getElementById("bpmInput").value=state.bpm;
+      state.selectedId=null;
+      renderSelection();renderEffects();resize();
+    }catch(err){
+      console.error(err);alert("JSONの読み込みに失敗しました。");
+    }
+  };
+  reader.readAsText(file);
+});
+
+document.getElementById("newButton").addEventListener("click",()=>{
+  stopAudio();
+  state.notes=[];state.effects=[];state.speeds=[];state.selectedId=null;
+  state.offset=0;state.pausedAt=0;state.duration=state.buffer?.duration||60;
+  renderSelection();renderEffects();resize();
+});
+
+setKind("tap_white");
+renderSelection();
+renderEffects();
+resize();
+</script>
+</body>
+</html>
