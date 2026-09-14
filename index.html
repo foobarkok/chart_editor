@@ -624,13 +624,6 @@ function draw(){
       ctx.fill();
       ctx.stroke();
 
-      /*ctx.strokeStyle="rgba(23, 26, 32, 0.8)";
-      ctx.lineWidth=4;
-      ctx.beginPath();
-      ctx.moveTo(x+width/2,y);
-      ctx.lineTo(x2+width/2,y2);
-      ctx.stroke();*/
-
       ctx.restore();
     }else{
       if(y+18<0||y-18>H)continue;
@@ -679,10 +672,9 @@ function loop(){
   if(state.playing){
     const ct=currentTime();
     const H=chartHeight();
-    const targetY=H * 0.75; // 画面下1/4の位置（高さ75%）
+    const targetY=H * 0.75;
     const currentY=timeToY(ct);
 
-    // 再生位置が画面下1/4に達した場合のみ追尾
     if(currentY >= targetY){
       state.offset=distanceToTime(Math.max(0, timeToDistance(ct) - (targetY - TOP) / state.zoom));
     }
@@ -779,16 +771,17 @@ function hitTestEffect(x,y){
   return null;
 }
 
-function isNoteOverlapping(lane, time, width, duration=0, ignoreId=null){
+function getOverlappingNotes(lane, time, width, duration=0, ignoreId=null){
+  const overlaps=[];
   const newStartLane = lane;
   const newEndLane = lane + width - 1;
   const newStartTime = time;
-  const newEndTime = time + Math.max(0, duration);
-  const isNewHold = state.noteKind === "hold" || duration > 0;
+  const newEndTime = duration > 0 ? time + duration : time + 0.001;
+
+  const EPS = 0.0001;
 
   for(const n of state.notes){
     if(ignoreId && n.id === ignoreId) continue;
-    if(isNewHold && n.kind !== "hold") continue;
 
     const nStartLane = n.lane;
     const nEndLane = n.lane + (n.width || 1) - 1;
@@ -796,19 +789,20 @@ function isNoteOverlapping(lane, time, width, duration=0, ignoreId=null){
     if(!laneOverlap) continue;
 
     const nStartTime = n.time;
-    const nEndTime = n.kind === "hold" ? n.time + Math.max(0, n.duration || 0) : n.time;
+    const nEndTime = (n.kind === "hold" && n.duration > 0) ? n.time + n.duration : n.time + 0.001;
 
-    if(!isNewHold && n.kind === "hold"){
-      const isAtStart = Math.abs(newStartTime - nStartTime) < 0.0001;
-      const isAtEnd = Math.abs(newStartTime - nEndTime) < 0.0001;
-      if(isAtStart || isAtEnd) continue;
+    const maxStart = Math.max(newStartTime, nStartTime);
+    const minEnd = Math.min(newEndTime, nEndTime);
+
+    if(maxStart < minEnd - EPS){
+      overlaps.push(n);
     }
-
-    const timeOverlap = Math.max(newStartTime, nStartTime) <= Math.min(newEndTime, nEndTime) + 0.0001;
-
-    if(timeOverlap) return true;
   }
-  return false;
+  return overlaps;
+}
+
+function isNoteOverlapping(lane, time, width, duration=0, ignoreId=null){
+  return getOverlappingNotes(lane, time, width, duration, ignoreId).length > 0;
 }
 
 function addNote(lane,time,duration=0,endLane=null){
@@ -818,9 +812,22 @@ function addNote(lane,time,duration=0,endLane=null){
   if(lane+width>6)return;
   
   const snapVal=Number(document.getElementById("snapInput").value)||16;
-
   const snappedTime=snapTime(time);
-  if(isNoteOverlapping(lane, snappedTime, width, state.noteKind==="hold" ? Math.max(0,duration) : 0)) return;
+  const isHold = state.noteKind === "hold";
+  const dur = isHold ? Math.max(0, duration) : 0;
+
+  const overlaps = getOverlappingNotes(lane, snappedTime, width, dur);
+
+  if(overlaps.length > 0){
+    if(isHold){
+      const removeIds = new Set(overlaps.map(n => n.id));
+      state.notes = state.notes.filter(n => !removeIds.has(n.id));
+      if(removeIds.has(state.selectedId)) state.selectedId = null;
+      renderSelection();
+      draw();
+    }
+    return;
+  }
 
   const n={
     id:Date.now().toString(36) + Math.random().toString(36).slice(2),
@@ -829,7 +836,7 @@ function addNote(lane,time,duration=0,endLane=null){
     endLane:endLane!==null?endLane:lane,
     width,
     kind:state.noteKind,
-    duration:state.noteKind==="hold"?Math.max(2/snapVal,duration):0
+    duration:isHold?Math.max(2/snapVal,duration):0
   };
 
   state.notes.push(n);
