@@ -25,7 +25,7 @@ h3:first-child{margin-top:4px}
 .swatch{width:17px;height:17px;border-radius:4px;border:1px solid #666;flex:none}
 .info{font-size:12px;color:var(--muted);line-height:1.55}
 .editor{position:relative;min-width:0;min-height:0;background:#0d0f14;overflow:hidden}
-.chart-scroll{position:absolute;inset:0 0 35px 0;overflow:auto;overscroll-behavior:contain}
+.chart-scroll{position:absolute;inset:0 0 35px 0;overflow-x:auto;overflow-y:hidden;overscroll-behavior:contain}
 #chart{display:block}
 .editor-timeline{position:absolute;left:0;right:0;bottom:0;height:35px;background:#11141a;border-top:1px solid var(--line);z-index:5}
 .seek-row{position:absolute;left:0;right:0;bottom:0;top:0;display:flex;align-items:center;gap:7px;padding:4px 8px;background:#171a20}
@@ -250,8 +250,7 @@ function beatsToTime(b){
 
 function chartWidth(){return WAVE_X+WAVE_W+20}
 function chartHeight(){
-  const maxT=Math.max(state.duration,MIN_CHART_SECONDS)+2;
-  return Math.max(500,(timeToDistance(maxT)+2)*state.zoom);
+  return wrap.clientHeight || 500;
 }
 
 function getSpeedMap(){
@@ -309,11 +308,13 @@ function yToTime(y){
 
 function resize(){
   const d=devicePixelRatio||1;
+  const w=chartWidth();
+  const h=chartHeight();
 
-  chart.width=chartWidth()*d;
-  chart.height=chartHeight()*d;
-  chart.style.width=chartWidth()+"px";
-  chart.style.height=chartHeight()+"px";
+  chart.width=w*d;
+  chart.height=h*d;
+  chart.style.width=w+"px";
+  chart.style.height=h+"px";
   ctx.setTransform(d,0,0,d,0,0);
 
   draw();
@@ -348,10 +349,6 @@ function speedColor(ratio){
 
 function draw(){
   const W=chartWidth(),H=chartHeight();
-
-  const margin=50;
-  const minY=Math.max(0, wrap.scrollTop - margin);
-  const maxY=Math.min(H, wrap.scrollTop + wrap.clientHeight + margin);
 
   ctx.clearRect(0,0,W,H);
   ctx.fillStyle="#0d0f14";ctx.fillRect(0,0,W,H);
@@ -432,8 +429,8 @@ function draw(){
     ctx.lineWidth=1;
     ctx.beginPath();
 
-    const startY=Math.max(Math.floor(TOP), Math.floor(minY));
-    const endY=Math.min(Math.ceil(H), Math.ceil(maxY));
+    const startY=Math.max(Math.floor(TOP), 0);
+    const endY=Math.min(Math.ceil(H), H);
 
     for(let y=startY;y<endY;y+=2){
       const t1=yToTime(y);
@@ -479,8 +476,8 @@ function draw(){
   const subDiv=snapVal>0?(snapVal/4):2;
   const totalSteps=Math.ceil(maxBeats*subDiv);
 
-  const tMin=yToTime(minY);
-  const tMax=yToTime(maxY);
+  const tMin=yToTime(0);
+  const tMax=yToTime(H);
   const beatMin=timeToBeats(tMin);
   const beatMax=timeToBeats(tMax);
 
@@ -491,7 +488,7 @@ function draw(){
     const beatIdx=i/subDiv;
     const t=beatsToTime(beatIdx);
     const y=timeToY(t);
-    if(y<minY||y>maxY)continue;
+    if(y<0||y>H)continue;
 
     const isBeat=Math.abs(beatIdx-Math.round(beatIdx))<0.0001;
     const roundedBeat=Math.round(beatIdx);
@@ -529,7 +526,7 @@ function draw(){
 
   for(const b of state.bpms){
     const y=timeToY(b.time);
-    if(y<minY-20||y>maxY+20)continue;
+    if(y<-20||y>H+20)continue;
 
     const selected=b.id===state.selectedId;
 
@@ -556,7 +553,7 @@ function draw(){
     const ey=timeToY(e.time);
     const ew=EFF_LANE_W-8;
 
-    if(ey<minY-20||ey>maxY+20)continue;
+    if(ey<-20||ey>H+20)continue;
 
     const selected=e.id===state.selectedId;
 
@@ -574,7 +571,7 @@ function draw(){
 
   for(const s of state.speeds){
     const y=timeToY(s.time);
-    if(y<minY-20||y>maxY+20)continue;
+    if(y<-20||y>H+20)continue;
 
     const c=speedColor(s.ratio);
     const selected=s.id===state.selectedId;
@@ -609,7 +606,7 @@ function draw(){
 
       const nMinY=Math.min(y,y2);
       const nMaxY=Math.max(y,y2);
-      if(nMaxY<minY-20||nMinY>maxY+20)continue;
+      if(nMaxY<-20||nMinY>H+20)continue;
 
       ctx.save();
       ctx.globalAlpha=0.5;
@@ -636,7 +633,7 @@ function draw(){
 
       ctx.restore();
     }else{
-      if(y+18<minY||y-18>maxY)continue;
+      if(y+18<0||y-18>H)continue;
 
       ctx.save();
       if(n.kind==="tap_yellow"){
@@ -658,7 +655,7 @@ function draw(){
 
   const ct=currentTime();
   const py=timeToY(ct);
-  if(py>=minY&&py<=maxY){
+  if(py>=0&&py<=H){
     ctx.strokeStyle="#fff";ctx.lineWidth=2;
     ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(WAVE_X+WAVE_W,py);ctx.stroke();
   }
@@ -678,7 +675,14 @@ function updateUI(){
   draw();
 }
 
-function loop(){updateUI();requestAnimationFrame(loop)}
+function loop(){
+  if(state.playing){
+    const ct=currentTime();
+    state.offset=distanceToTime(Math.max(0, timeToDistance(ct) - 50 / state.zoom));
+    updateUI();
+  }
+  requestAnimationFrame(loop);
+}
 requestAnimationFrame(loop);
 
 function setMode(mode){
@@ -879,7 +883,7 @@ chart.addEventListener("pointerdown",e=>{
   const y=e.clientY-r.top;
 
   if(x>=WAVE_X&&x<=WAVE_X+WAVE_W){
-    seekTo(yToTime(y));
+    seekTo(yToTime(y), true);
     return;
   }
 
@@ -1291,7 +1295,7 @@ function stopAudio(){
   clearSE();
 }
 
-function seekTo(t){
+function seekTo(t, keepOffset=false){
   t=Math.max(0,Math.min(state.duration,t));
 
   if(state.source){
@@ -1302,7 +1306,14 @@ function seekTo(t){
   state.pausedAt=t;
   clearSE();
 
-  draw();
+  if(!keepOffset){
+    const py=timeToY(t);
+    const H=chartHeight();
+    if(py < TOP || py > H - 20){
+      state.offset=distanceToTime(Math.max(0, timeToDistance(t) - 50 / state.zoom));
+    }
+  }
+  updateUI();
 }
 
 document.getElementById("playButton").addEventListener("click",playAudio);
@@ -1336,7 +1347,13 @@ wrap.addEventListener("wheel",e=>{
   if(e.shiftKey){
     wrap.scrollLeft+=e.deltaY;
   }else{
-    wrap.scrollTop+=e.deltaY;
+    const dDist = e.deltaY / state.zoom;
+    const curDist = timeToDistance(state.offset);
+    const maxT = Math.max(state.duration, MIN_CHART_SECONDS) + 2;
+    const maxDist = Math.max(0, timeToDistance(maxT));
+    const newDist = Math.max(0, Math.min(maxDist, curDist + dDist));
+    state.offset = distanceToTime(newDist);
+    draw();
   }
   e.preventDefault();
 },{passive:false});
@@ -1417,6 +1434,7 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
       if(state.audioDuration!==null){
         state.duration=Math.max(state.duration,state.audioDuration);
       }
+      state.offset=0;
       document.getElementById("bpmInput").value=state.bpm;
       state.selectedId=null;
       renderEffectTypes();renderSelection();resize();
