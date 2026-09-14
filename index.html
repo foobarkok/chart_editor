@@ -140,7 +140,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
       <div class="small">BPM</div><input id="editBpm" type="number" min="1" max="500" step=".01">
     </div>
     <div id="editDurationGroup">
-      <div class="small">長さ (拍)</div><input id="editDuration" type="number" min="0" step=".01">
+      <div class="small">長さ (拍)</div><input id="editDuration" type="number" min="0.01" step=".01">
     </div>
     <div id="editKindGroup">
       <div class="small">種類</div>
@@ -816,6 +816,8 @@ function addNote(lane,time,duration=0,endLane=null){
 
   const width=state.noteKind.startsWith("wide_")?2:1;
   if(lane+width>6)return;
+  
+  const snapVal=Number(document.getElementById("snapInput").value)||16;
 
   const snappedTime=snapTime(time);
   if(isNoteOverlapping(lane, snappedTime, width, state.noteKind==="hold" ? Math.max(0,duration) : 0)) return;
@@ -827,7 +829,7 @@ function addNote(lane,time,duration=0,endLane=null){
     endLane:endLane!==null?endLane:lane,
     width,
     kind:state.noteKind,
-    duration:state.noteKind==="hold"?Math.max(0,duration):0
+    duration:state.noteKind==="hold"?Math.max(2/snapVal,duration):0
   };
 
   state.notes.push(n);
@@ -1162,6 +1164,11 @@ document.getElementById("applyEdit").addEventListener("click",()=>{
     const newDuration=newKind==="hold"
       ? Math.max(0,beatsToTime(timeToBeats(newTime)+beatDur)-newTime)
       : 0;
+    
+    if(newKind === "hold" && newDuration <= 0){
+      alert("ロングノーツの長さを0に設定することはできません。");
+      return;
+    }
 
     n.time=newTime;
     n.lane=newLane;
