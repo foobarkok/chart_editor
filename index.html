@@ -678,7 +678,14 @@ function updateUI(){
 function loop(){
   if(state.playing){
     const ct=currentTime();
-    state.offset=distanceToTime(Math.max(0, timeToDistance(ct) - 50 / state.zoom));
+    const H=chartHeight();
+    const targetY=H * 0.75; // 画面下1/4の位置（高さ75%）
+    const currentY=timeToY(ct);
+
+    // 再生位置が画面下1/4に達した場合のみ追尾
+    if(currentY >= targetY){
+      state.offset=distanceToTime(Math.max(0, timeToDistance(ct) - (targetY - TOP) / state.zoom));
+    }
     updateUI();
   }
   requestAnimationFrame(loop);
