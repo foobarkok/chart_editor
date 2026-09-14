@@ -80,7 +80,8 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   <h3>ノーツ</h3>
   <div class="note-type active" data-group="note" data-kind="tap_white"><span class="swatch" style="background:#f3f5f8"></span>普通・白</div>
   <div class="note-type" data-group="note" data-kind="tap_yellow"><span class="swatch" style="background:rgba(255,234,0,0.5)"></span>普通・黄</div>
-  <div class="note-type" data-group="note" data-kind="hold"><span class="swatch" style="background:#f3f5f8"></span>ロング</div>
+  <div class="note-type" data-group="note" data-kind="tap_blue"><span class="swatch" style="background:#4d8cff"></span>普通・青</div>
+  <div class="note-type" data-group="note" data-kind="hold"><span class="swatch" style="background:rgba(243,245,248,0.6)"></span>ロング</div>
   <div class="note-type" data-group="note" data-kind="wide_red"><span class="swatch" style="background:#ff5364"></span>幅2・赤</div>
   <div class="note-type" data-group="note" data-kind="wide_blue"><span class="swatch" style="background:#4d8cff"></span>幅2・青</div>
 
@@ -96,7 +97,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   <div class="info">
     配置モードで譜面上をクリックするとノーツ/BPM変更/変速/効果を配置します。<br>
     BPMレーン(赤)をクリックすると「配置BPM」値のノーツを設置できます。<br>
-    すでにノーツがある場所をクリックすると削除できます。<br><br>
+    すでにノーツがある場所をクリックすると削除できます。（※ロングノーツおよびロングノーツ配置中は除く）<br><br>
     <kbd>0</kbd>〜<kbd>9</kbd>: 曲の0%〜90%地点へジャンプ<br>
     ホイール: 縦スクロール<br>
     <kbd>Shift</kbd> + ホイール: 横スクロール<br>
@@ -131,7 +132,10 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   <div id="selectionNone" class="info">オブジェクトを選択してください。</div>
   <div id="selectionPanel" hidden>
     <div class="small">位置 (拍)</div><input id="editTime" type="number" step=".01">
-    <div class="small">レーン (1〜6 / 効果1〜3)</div><input id="editLane" type="number" min="1" max="6" step="1">
+    <div class="small">レーン / 始点レーン (1〜6 / 効果1〜3)</div><input id="editLane" type="number" min="1" max="6" step="0.01">
+    <div id="editEndLaneGroup" hidden>
+      <div class="small">終点レーン (1〜6)</div><input id="editEndLane" type="number" min="1" max="6" step="0.01">
+    </div>
     <div id="editBpmGroup" hidden>
       <div class="small">BPM</div><input id="editBpm" type="number" min="1" step=".01">
     </div>
@@ -141,8 +145,12 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
     <div id="editKindGroup">
       <div class="small">種類</div>
       <select id="editKind">
-        <option value="tap_white">普通・白</option><option value="tap_yellow">普通・黄</option>
-        <option value="hold">ロング</option><option value="wide_red">幅2・赤</option><option value="wide_blue">幅2・青</option>
+        <option value="tap_white">普通・白</option>
+        <option value="tap_yellow">普通・黄</option>
+        <option value="tap_blue">普通・青</option>
+        <option value="hold">ロング</option>
+        <option value="wide_red">幅2・赤</option>
+        <option value="wide_blue">幅2・青</option>
       </select>
     </div>
     <div id="editNameGroup" hidden>
@@ -341,15 +349,13 @@ function speedColor(ratio){
 function draw(){
   const W=chartWidth(),H=chartHeight();
 
-  // === 可視領域（画面表示範囲）の計算 ===
-  const margin=50; // マージンを持たせて端でのチラつきを防止
+  const margin=50;
   const minY=Math.max(0, wrap.scrollTop - margin);
   const maxY=Math.min(H, wrap.scrollTop + wrap.clientHeight + margin);
 
   ctx.clearRect(0,0,W,H);
   ctx.fillStyle="#0d0f14";ctx.fillRect(0,0,W,H);
 
-  // 拍数表示レーン（左端）
   ctx.fillStyle="#12151b";
   ctx.fillRect(0,0,BEAT_W,H);
   ctx.strokeStyle="#485266";
@@ -359,7 +365,6 @@ function draw(){
   ctx.textAlign="center";
   ctx.fillText("拍",BEAT_W/2,18);
 
-  // BPM変更レーン（赤の太線枠）
   ctx.fillStyle="#1c1416";
   ctx.fillRect(BPM_X,0,BPM_W,H);
   ctx.strokeStyle="#ff5364";
@@ -371,7 +376,6 @@ function draw(){
   ctx.textAlign="center";
   ctx.fillText("BPM",BPM_X+BPM_W/2,18);
 
-  // 1〜6レーン描画
   for(let lane=0;lane<6;lane++){
     const x=LANES_X+lane*(LANE_W+GAP);
     ctx.fillStyle=lane%2?"#151820":"#12151b";
@@ -384,7 +388,6 @@ function draw(){
     ctx.fillText(String(lane+1),x+LANE_W/2,18);
   }
 
-  // 変速レーン（薄い青の太線枠）
   ctx.fillStyle="#151820";
   ctx.fillRect(SPD_X,0,SPD_W,H);
   ctx.strokeStyle="#5b9bd5";
@@ -396,7 +399,6 @@ function draw(){
   ctx.textAlign="center";
   ctx.fillText("変速",SPD_X+SPD_W/2,18);
 
-  // 効果レーン 3列描画（濃い緑の太線枠）
   for(let elane=0;elane<3;elane++){
     const ex=EFF_X+elane*(EFF_LANE_W+EFF_GAP);
     ctx.fillStyle=elane%2?"#17131f":"#14111c";
@@ -411,7 +413,6 @@ function draw(){
     ctx.fillText("効果"+(elane+1),ex+EFF_LANE_W/2,18);
   }
 
-  // 縦向き波形レーン
   ctx.fillStyle="#11141a";
   ctx.fillRect(WAVE_X,0,WAVE_W,H);
   ctx.strokeStyle="#485266";
@@ -421,7 +422,6 @@ function draw(){
   ctx.textAlign="center";
   ctx.fillText("波形",WAVE_CENTER,18);
 
-  // 縦波形の描画（可視領域内のみループ計算）
   if(state.buffer){
     const chanData=state.buffer.getChannelData(0);
     const sr=state.buffer.sampleRate;
@@ -473,14 +473,12 @@ function draw(){
     ctx.fillText("音声未読込",WAVE_CENTER,H/2);
   }
 
-  // === 小節線・表拍線・裏拍線の可視領域最適化 ===
   const maxT=Math.max(state.duration,MIN_CHART_SECONDS)+2;
   const maxBeats=timeToBeats(maxT);
   const snapVal=Number(document.getElementById("snapInput").value);
   const subDiv=snapVal>0?(snapVal/4):2;
   const totalSteps=Math.ceil(maxBeats*subDiv);
 
-  // 可視領域内の時間・拍数からループの開始・終了ステップを限定
   const tMin=yToTime(minY);
   const tMax=yToTime(maxY);
   const beatMin=timeToBeats(tMin);
@@ -529,7 +527,6 @@ function draw(){
     }
   }
 
-  // BPM変更ノーツ（可視判定）
   for(const b of state.bpms){
     const y=timeToY(b.time);
     if(y<minY-20||y>maxY+20)continue;
@@ -553,7 +550,6 @@ function draw(){
     ctx.fillText(b.bpm,BPM_X+BPM_W/2,y+4);
   }
 
-  // 効果イベント描画（3列）（可視判定）
   for(const e of state.effects){
     const elane=e.lane!==undefined?e.lane:0;
     const ex=EFF_X+elane*(EFF_LANE_W+EFF_GAP)+4;
@@ -576,7 +572,6 @@ function draw(){
     ctx.fillText(e.name||"effect",ex+ew/2,ey+4);
   }
 
-  // 変速ノーツ（可視判定）
   for(const s of state.speeds){
     const y=timeToY(s.time);
     if(y<minY-20||y>maxY+20)continue;
@@ -601,42 +596,66 @@ function draw(){
     ctx.fillText((s.ratio===0.5?"1/2":s.ratio)+"x",SPD_X+SPD_W/2,y+4);
   }
 
-  // ノーツ（可視判定）
   for(const n of state.notes){
     let x=LANES_X+n.lane*(LANE_W+GAP)+6;
     const y=timeToY(n.time);
     let width=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
-    const h=n.kind==="hold"?Math.max(14,(n.duration||0)*state.zoom):18;
-
-    if(y+h<minY||y-9>maxY)continue;
-
     const selected=n.id===state.selectedId;
-    
-    ctx.save();
-    if(n.kind==="tap_yellow"){
-      ctx.globalAlpha=0.5;
-    }
-
-    ctx.fillStyle=color(n.kind);
-    ctx.strokeStyle=selected?"#fff":"rgba(255,255,255,.4)";
-    ctx.lineWidth=selected?3:1;
 
     if(n.kind==="hold"){
-      ctx.fillRect(x,y,width,h);
-      ctx.strokeRect(x+.5,y+.5,width-1,h-1);
-      ctx.fillStyle="#171a20";
-      ctx.fillRect(x+width/2-2,y+7,4,Math.max(0,h-14));
+      const endLane=n.endLane!==undefined?n.endLane:n.lane;
+      const x2=LANES_X+endLane*(LANE_W+GAP)+6;
+      const y2=timeToY(n.time+(n.duration||0));
+
+      const nMinY=Math.min(y,y2);
+      const nMaxY=Math.max(y,y2);
+      if(nMaxY<minY-20||nMinY>maxY+20)continue;
+
+      ctx.save();
+      ctx.globalAlpha=0.5;
+
+      ctx.fillStyle=color(n.kind);
+      ctx.strokeStyle=selected?"#fff":"rgba(255,255,255,.6)";
+      ctx.lineWidth=selected?3:1;
+
+      ctx.beginPath();
+      ctx.moveTo(x,y);
+      ctx.lineTo(x+width,y);
+      ctx.lineTo(x2+width,y2);
+      ctx.lineTo(x2,y2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.strokeStyle="rgba(23, 26, 32, 0.8)";
+      ctx.lineWidth=4;
+      ctx.beginPath();
+      ctx.moveTo(x+width/2,y);
+      ctx.lineTo(x2+width/2,y2);
+      ctx.stroke();
+
+      ctx.restore();
     }else{
+      if(y+18<minY||y-18>maxY)continue;
+
+      ctx.save();
+      if(n.kind==="tap_yellow"){
+        ctx.globalAlpha=0.5;
+      }
+
+      ctx.fillStyle=color(n.kind);
+      ctx.strokeStyle=selected?"#fff":"rgba(255,255,255,.4)";
+      ctx.lineWidth=selected?3:1;
+
       if(n.kind==="tap_yellow"){
         x += 8;
         width -= 16;
       }
       ctx.beginPath();ctx.roundRect(x,y-9,width,18,5);ctx.fill();ctx.stroke();
+      ctx.restore();
     }
-    ctx.restore();
   }
 
-  // 再生ヘッド（可視判定）
   const ct=currentTime();
   const py=timeToY(ct);
   if(py>=minY&&py<=maxY){
@@ -683,18 +702,30 @@ document.querySelectorAll(".note-type").forEach(b=>b.addEventListener("click",()
 function hitTest(x,y){
   for(let i=state.notes.length-1;i>=0;i--){
     const n=state.notes[i];
-    let nx=LANES_X+n.lane*(LANE_W+GAP)+6,ny=timeToY(n.time);
-    let nw=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
+    let x1=LANES_X+n.lane*(LANE_W+GAP)+6;
+    let y1=timeToY(n.time);
+    let width=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
 
     if(n.kind==="hold"){
-      const nh=Math.max(14,(n.duration||0)*state.zoom);
-      if(x>=nx&&x<=nx+nw&&y>=ny&&y<=ny+nh)return n;
+      const y2=timeToY(n.time+(n.duration||0));
+      const minY=Math.min(y1,y2);
+      const maxY=Math.max(y1,y2);
+
+      if(y>=minY&&y<=maxY){
+        const endL=n.endLane!==undefined?n.endLane:n.lane;
+        const x2=LANES_X+endL*(LANE_W+GAP)+6;
+        const t=Math.abs(y2-y1)<0.001?0:(y-y1)/(y2-y1);
+        const curX=x1+(x2-x1)*t;
+        if(x>=curX&&x<=curX+width){
+          return n;
+        }
+      }
     }else{
       if(n.kind==="tap_yellow"){
-        nx += 8;
-        nw -= 16;
+        x1 += 8;
+        width -= 16;
       }
-      if(x>=nx&&x<=nx+nw&&y>=ny-9&&y<=ny+9)return n;
+      if(x>=x1&&x<=x1+width&&y>=y1-9&&y<=y1+9)return n;
     }
   }
   return null;
@@ -742,9 +773,12 @@ function isNoteOverlapping(lane, time, width, duration=0, ignoreId=null){
   const newEndLane = lane + width - 1;
   const newStartTime = time;
   const newEndTime = time + Math.max(0, duration);
+  const isNewHold = state.noteKind === "hold" || duration > 0;
 
   for(const n of state.notes){
     if(ignoreId && n.id === ignoreId) continue;
+    // ロングノーツ配置時、または配置対象がロングノーツの場合は通常ノーツとの重なりを無視する
+    if(isNewHold && n.kind !== "hold") continue;
 
     const nStartLane = n.lane;
     const nEndLane = n.lane + (n.width || 1) - 1;
@@ -753,6 +787,14 @@ function isNoteOverlapping(lane, time, width, duration=0, ignoreId=null){
 
     const nStartTime = n.time;
     const nEndTime = n.kind === "hold" ? n.time + Math.max(0, n.duration || 0) : n.time;
+
+    // 通常ノーツ配置時、既存ロングノーツの始点・終点と同位置への配置を許可
+    if(!isNewHold && n.kind === "hold"){
+      const isAtStart = Math.abs(newStartTime - nStartTime) < 0.0001;
+      const isAtEnd = Math.abs(newStartTime - nEndTime) < 0.0001;
+      if(isAtStart || isAtEnd) continue;
+    }
+
     const timeOverlap = Math.max(newStartTime, nStartTime) <= Math.min(newEndTime, nEndTime) + 0.0001;
 
     if(timeOverlap) return true;
@@ -760,7 +802,7 @@ function isNoteOverlapping(lane, time, width, duration=0, ignoreId=null){
   return false;
 }
 
-function addNote(lane,time,duration=0){
+function addNote(lane,time,duration=0,endLane=null){
   if(lane<0||lane>=6)return;
 
   const width=state.noteKind.startsWith("wide_")?2:1;
@@ -773,6 +815,7 @@ function addNote(lane,time,duration=0){
     id:Date.now().toString(36) + Math.random().toString(36).slice(2),
     time:snappedTime,
     lane,
+    endLane:endLane!==null?endLane:lane,
     width,
     kind:state.noteKind,
     duration:state.noteKind==="hold"?Math.max(0,duration):0
@@ -886,10 +929,12 @@ chart.addEventListener("pointerdown",e=>{
       return;
     }
     if(hit){
-      state.notes=state.notes.filter(n=>n.id!==hit.id);
-      if(state.selectedId===hit.id)state.selectedId=null;
-      renderSelection();draw();
-      return;
+      if(hit.kind !== "hold" && state.noteKind !== "hold"){
+        state.notes=state.notes.filter(n=>n.id!==hit.id);
+        if(state.selectedId===hit.id)state.selectedId=null;
+        renderSelection();draw();
+        return;
+      }
     }
     if(hitEff){
       state.effects=state.effects.filter(ef=>ef.id!==hitEff.id);
@@ -898,21 +943,18 @@ chart.addEventListener("pointerdown",e=>{
       return;
     }
 
-    // BPM変更レーン判定
     if(x>=BPM_X&&x<=BPM_X+BPM_W){
       const bpmVal=parseFloat(document.getElementById("bpmPlacementInput").value)||120;
       addBpmNote(yToTime(y), bpmVal);
       return;
     }
 
-    // 変速レーン判定
     if(x>=SPD_X&&x<=SPD_X+SPD_W){
       const ratio=parseFloat(state.speedKind.replace("speed_",""));
       addSpeedNote(yToTime(y), ratio);
       return;
     }
 
-    // 効果レーン（3列）判定
     if(x>=EFF_X&&x<=EFF_RIGHT){
       const elane=Math.floor((x-EFF_X)/(EFF_LANE_W+EFF_GAP));
       if(elane>=0&&elane<3){
@@ -921,7 +963,6 @@ chart.addEventListener("pointerdown",e=>{
       return;
     }
 
-    // 通常ノーツレーン判定
     if(x<LANES_X)return;
     const lane=Math.floor((x-LANES_X)/(LANE_W+GAP));
     if(lane<0||lane>=6)return;
@@ -972,7 +1013,7 @@ function drawPreview(){
   const y=timeToY(holdDrag.time);
   const h=Math.max(14,holdDrag.duration*state.zoom);
 
-  ctx.globalAlpha=.7;
+  ctx.globalAlpha=.5;
   ctx.fillStyle="#f3f5f8";
   ctx.fillRect(x,y,LANE_W-12,h);
   ctx.globalAlpha=1;
@@ -1053,6 +1094,8 @@ function renderSelection(){
 
   const editTime=document.getElementById("editTime");
   const editLane=document.getElementById("editLane");
+  const editEndLaneGroup=document.getElementById("editEndLaneGroup");
+  const editEndLane=document.getElementById("editEndLane");
   const editDurGroup=document.getElementById("editDurationGroup");
   const editKindGroup=document.getElementById("editKindGroup");
   const editNameGroup=document.getElementById("editNameGroup");
@@ -1060,23 +1103,30 @@ function renderSelection(){
 
   if(n){
     editDurGroup.hidden=false;editKindGroup.hidden=false;editNameGroup.hidden=true;editBpmGroup.hidden=true;
-    editLane.disabled=false;editLane.min=1;editLane.max=6;
+    editLane.disabled=false;editLane.min=1;editLane.max=6;editLane.step="0.01";
     editTime.value=+timeToBeats(n.time).toFixed(2);
-    editLane.value=n.lane+1;
+    editLane.value=+(n.lane+1).toFixed(2);
     document.getElementById("editDuration").value=+timeToBeats(n.duration||0).toFixed(2);
     document.getElementById("editKind").value=n.kind;
+
+    if(n.kind==="hold"){
+      editEndLaneGroup.hidden=false;
+      editEndLane.value=+((n.endLane!==undefined?n.endLane:n.lane)+1).toFixed(2);
+    }else{
+      editEndLaneGroup.hidden=true;
+    }
   }else if(b){
-    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=true;editBpmGroup.hidden=false;
+    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=true;editBpmGroup.hidden=false;editEndLaneGroup.hidden=true;
     editLane.disabled=true;
     editTime.value=+timeToBeats(b.time).toFixed(2);
     document.getElementById("editBpm").value=b.bpm;
   }else if(s){
-    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=true;editBpmGroup.hidden=true;
+    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=true;editBpmGroup.hidden=true;editEndLaneGroup.hidden=true;
     editLane.disabled=true;
     editTime.value=+timeToBeats(s.time).toFixed(2);
   }else if(e){
-    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=false;editBpmGroup.hidden=true;
-    editLane.disabled=false;editLane.min=1;editLane.max=3;
+    editDurGroup.hidden=true;editKindGroup.hidden=true;editNameGroup.hidden=false;editBpmGroup.hidden=true;editEndLaneGroup.hidden=true;
+    editLane.disabled=false;editLane.min=1;editLane.max=3;editLane.step="1";
     editTime.value=+timeToBeats(e.time).toFixed(2);
     editLane.value=(e.lane||0)+1;
     document.getElementById("editName").value=e.name;
@@ -1094,26 +1144,18 @@ document.getElementById("applyEdit").addEventListener("click",()=>{
   if(n){
     const beatDur=Math.max(0,Number(document.getElementById("editDuration").value)||0);
     const newTime=beatsToTime(beatPos);
-    const newLane=Math.max(0,Math.min(5,Math.round(Number(document.getElementById("editLane").value)-1)));
+    const newLane=Math.max(0,Math.min(6,Number(document.getElementById("editLane").value)-1));
+    const newEndLane=Math.max(0,Math.min(6,Number(document.getElementById("editEndLane").value)-1));
     const newKind=document.getElementById("editKind").value;
     const newWidth=newKind.startsWith("wide_")?2:1;
-
-    if(newLane + newWidth > 6){
-      alert("幅2ノーツはレーン5〜6には配置できません。");
-      return;
-    }
 
     const newDuration=newKind==="hold"
       ? Math.max(0,beatsToTime(timeToBeats(newTime)+beatDur)-newTime)
       : 0;
 
-    if(isNoteOverlapping(newLane,newTime,newWidth,newDuration,n.id)){
-      alert("その位置には他のノーツがあるため配置できません。");
-      return;
-    }
-
     n.time=newTime;
     n.lane=newLane;
+    n.endLane=newKind==="hold"?newEndLane:newLane;
     n.duration=newDuration;
     n.kind=newKind;
     n.width=newWidth;
@@ -1315,7 +1357,7 @@ document.addEventListener("keydown",e=>{
     state.effects=state.effects.filter(ef=>ef.id!==state.selectedId);
     state.selectedId=null;renderSelection();draw();
   }
-  
+
   if(e.key==="ArrowLeft"||e.key==="ArrowRight"){
     e.preventDefault();
     const snap=Number(document.getElementById("snapInput").value);
@@ -1347,7 +1389,6 @@ function chartData(){
 function saveJSON(){
   const blob=new Blob([JSON.stringify(chartData(),null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
-  const a=document.getElementById("saveButton");
   const link=document.createElement("a");
   link.href=url;link.download="chart.json";link.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -1396,4 +1437,3 @@ resize();
 </script>
 </body>
 </html>
-
