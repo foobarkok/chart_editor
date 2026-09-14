@@ -52,7 +52,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   <button id="loadButton">JSON読込</button>
   <button id="saveButton">JSON保存</button>
   <input id="jsonInput" type="file" accept=".json,application/json" hidden>
-  <div class="group"><label>初期BPM</label><input id="bpmInput" type="number" min="1" step=".01" value="120" style="width:75px"></div>
+  <div class="group"><label>初期BPM</label><input id="bpmInput" type="number" min="1" max="500" step=".01" value="120" style="width:75px"></div>
   <div class="group"><label>Snap</label><select id="snapInput">
     <option value="0">なし</option><option value="4">1/4</option><option value="8">1/8</option>
     <option value="12">1/12</option><option value="16" selected>1/16</option>
@@ -74,7 +74,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   <h3>BPM変更</h3>
   <div class="group" style="margin-bottom:10px">
     <label>配置BPM</label>
-    <input id="bpmPlacementInput" type="number" min="1" step=".01" value="120" style="width:100px">
+    <input id="bpmPlacementInput" type="number" min="1" max="500" step=".01" value="120" style="width:100px">
   </div>
 
   <h3>ノーツ</h3>
@@ -137,7 +137,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
       <div class="small">終点レーン (1〜6)</div><input id="editEndLane" type="number" min="1" max="6" step="0.01">
     </div>
     <div id="editBpmGroup" hidden>
-      <div class="small">BPM</div><input id="editBpm" type="number" min="1" step=".01">
+      <div class="small">BPM</div><input id="editBpm" type="number" min="1" max="500" step=".01">
     </div>
     <div id="editDurationGroup">
       <div class="small">長さ (拍)</div><input id="editDuration" type="number" min="0" step=".01">
@@ -777,7 +777,6 @@ function isNoteOverlapping(lane, time, width, duration=0, ignoreId=null){
 
   for(const n of state.notes){
     if(ignoreId && n.id === ignoreId) continue;
-    // ロングノーツ配置時、または配置対象がロングノーツの場合は通常ノーツとの重なりを無視する
     if(isNewHold && n.kind !== "hold") continue;
 
     const nStartLane = n.lane;
@@ -788,7 +787,6 @@ function isNoteOverlapping(lane, time, width, duration=0, ignoreId=null){
     const nStartTime = n.time;
     const nEndTime = n.kind === "hold" ? n.time + Math.max(0, n.duration || 0) : n.time;
 
-    // 通常ノーツ配置時、既存ロングノーツの始点・終点と同位置への配置を許可
     if(!isNewHold && n.kind === "hold"){
       const isAtStart = Math.abs(newStartTime - nStartTime) < 0.0001;
       const isAtEnd = Math.abs(newStartTime - nEndTime) < 0.0001;
@@ -829,11 +827,12 @@ function addNote(lane,time,duration=0,endLane=null){
 
 function addBpmNote(time, bpm){
   const t=snapTime(time);
+  const clampedBpm=Math.max(1, Math.min(500, bpm));
   state.bpms=state.bpms.filter(b=>Math.abs(b.time-t)>0.0001);
   const b={
     id:Date.now().toString(36)+Math.random().toString(36).slice(2),
     time:t,
-    bpm:bpm
+    bpm:clampedBpm
   };
   state.bpms.push(b);
   state.bpms.sort((a,b)=>a.time-b.time);
@@ -1162,7 +1161,8 @@ document.getElementById("applyEdit").addEventListener("click",()=>{
     state.duration=Math.max(state.duration,n.time+n.duration);
   }else if(b){
     b.time=beatsToTime(beatPos);
-    b.bpm=Math.max(1,Number(document.getElementById("editBpm").value)||120);
+    const rawBpm=Number(document.getElementById("editBpm").value)||120;
+    b.bpm=Math.max(1,Math.min(500,rawBpm));
     state.bpms.sort((x,y)=>x.time-y.time);
   }else if(s){
     s.time=beatsToTime(beatPos);
@@ -1314,7 +1314,9 @@ seekInput.addEventListener("input",e=>{
 });
 
 document.getElementById("bpmInput").addEventListener("change",e=>{
-  state.bpm=Math.max(1,Number(e.target.value)||120);
+  const val=Number(e.target.value)||120;
+  state.bpm=Math.max(1,Math.min(500,val));
+  e.target.value=state.bpm;
   resize();renderSelection();
 });
 
@@ -1404,14 +1406,14 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
   reader.onload=()=>{
     try{
       const d=JSON.parse(reader.result);
-      state.bpm=Number(d.bpm)||120;
+      state.bpm=Math.max(1,Math.min(500,Number(d.bpm)||120));
       state.duration=Math.max(0,Number(d.duration)||0);
       state.notes=Array.isArray(d.notes)?d.notes:[];
       state.effects=Array.isArray(d.effects)?d.effects:[];
       state.effectTypes=Array.isArray(d.effectTypes)&&d.effectTypes.length?d.effectTypes:["effect"];
       state.activeEffectType=state.effectTypes[0];
       state.speeds=Array.isArray(d.speeds)?d.speeds:[];
-      state.bpms=Array.isArray(d.bpms)?d.bpms:[];
+      state.bpms=Array.isArray(d.bpms)?d.bpms.map(b=>({...b,bpm:Math.max(1,Math.min(500,Number(b.bpm)||120))})):[];
       if(state.audioDuration!==null){
         state.duration=Math.max(state.duration,state.audioDuration);
       }
