@@ -84,6 +84,9 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   <div class="note-type" data-group="note" data-kind="hold"><span class="swatch" style="background:rgba(243,245,248,0.6)"></span>ロング</div>
   <div class="note-type" data-group="note" data-kind="wide_red"><span class="swatch" style="background:#ff5364"></span>幅2・赤</div>
   <div class="note-type" data-group="note" data-kind="wide_blue"><span class="swatch" style="background:#4d8cff"></span>幅2・青</div>
+  <div class="note-type" data-group="note" data-kind="slider_left"><span class="swatch" style="background:#ff5364"></span>左スライダー・赤</div>
+  <div class="note-type" data-group="note" data-kind="slider_right"><span class="swatch" style="background:#4d8cff"></span>右スライダー・青</div>
+  <div class="note-type" data-group="note" data-kind="slider_full"><span class="swatch" style="background:#f3f5f8"></span>全幅スライダー・白</div>
 
   <h3>変速ノーツ</h3>
   <div class="note-type" data-group="speed" data-kind="speed_0.5"><span class="swatch" style="background:#00e5ff"></span>変速 1/2倍</div>
@@ -151,10 +154,20 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
         <option value="hold">ロング</option>
         <option value="wide_red">幅2・赤</option>
         <option value="wide_blue">幅2・青</option>
+        <option value="slider_left">左スライダー・赤</option>
+        <option value="slider_right">右スライダー・青</option>
+        <option value="slider_full">全幅スライダー・白</option>
       </select>
     </div>
     <div id="editNameGroup" hidden>
       <div class="small">効果名</div><input id="editName" type="text">
+    </div>
+    <div id="editDirectionGroup" hidden>
+      <div class="small">スライド方向</div>
+      <select id="editDirection">
+        <option value="left">← 左</option>
+        <option value="right">→ 右</option>
+      </select>
     </div>
     <button id="applyEdit">適用</button>
   </div>
@@ -330,10 +343,22 @@ function snapTime(t){
   return Math.max(0,beatsToTime(snappedBeat));
 }
 
+function isSliderKind(kind){
+  return kind==="slider_left"||kind==="slider_right"||kind==="slider_full";
+}
+
+function sliderLaneForKind(kind){
+  return kind==="slider_right"?3:0;
+}
+
+function sliderWidthForKind(kind){
+  return kind==="slider_full"?6:3;
+}
+
 function color(kind){
-  if(kind==="wide_red")return "#ff5364";
+  if(kind==="wide_red"||kind==="slider_left")return "#ff5364";
   if(kind==="tap_yellow")return "#ffea00";
-  if(kind==="tap_blue"||kind==="wide_blue")return "#4d8cff";
+  if(kind==="tap_blue"||kind==="wide_blue"||kind==="slider_right")return "#4d8cff";
   return "#f3f5f8";
 }
 
@@ -599,7 +624,37 @@ function draw(){
     let width=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
     const selected=n.id===state.selectedId;
 
-    if(n.kind==="hold"){
+    if(isSliderKind(n.kind)){
+      if(y+18<0||y-18>H)continue;
+
+      ctx.save();
+      ctx.fillStyle=color(n.kind);
+      ctx.globalAlpha=n.kind==="slider_full"?0.72:0.58;
+      ctx.strokeStyle=selected?"#fff":"rgba(255,255,255,.5)";
+      ctx.lineWidth=selected?3:1;
+      ctx.beginPath();
+      ctx.roundRect(x,y-9,width,18,5);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.globalAlpha=1;
+      ctx.strokeStyle=selected?"#fff":"rgba(20,20,25,.9)";
+      ctx.fillStyle=selected?"#fff":"rgba(20,20,25,.9)";
+      ctx.lineWidth=2.2;
+      const dir=n.direction==="right"?"right":"left";
+      const cx=x+width/2;
+      const arrowLen=Math.min(28,Math.max(14,width*0.28));
+      const ax1=dir==="right"?cx-arrowLen/2:cx+arrowLen/2;
+      const ax2=dir==="right"?cx+arrowLen/2:cx-arrowLen/2;
+      ctx.beginPath();
+      ctx.moveTo(ax1,y);ctx.lineTo(ax2,y);ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(ax2,y);
+      ctx.lineTo(ax2-(dir==="right"?7:-7),y-5);
+      ctx.lineTo(ax2-(dir==="right"?7:-7),y+5);
+      ctx.closePath();ctx.fill();
+      ctx.restore();
+    }else if(n.kind==="hold"){
       const endLane=n.endLane!==undefined?n.endLane:n.lane;
       const x2=LANES_X+endLane*(LANE_W+GAP)+6;
       const y2=timeToY(n.time+(n.duration||0));
@@ -709,7 +764,9 @@ function hitTest(x,y){
     let y1=timeToY(n.time);
     let width=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
 
-    if(n.kind==="hold"){
+    if(isSliderKind(n.kind)){
+      if(x>=x1&&x<=x1+width&&y>=y1-10&&y<=y1+10)return n;
+    }else if(n.kind==="hold"){
       const y2=timeToY(n.time+(n.duration||0));
       const minY=Math.min(y1,y2);
       const maxY=Math.max(y1,y2);
@@ -808,7 +865,9 @@ function isNoteOverlapping(lane, time, width, duration=0, ignoreId=null){
 function addNote(lane,time,duration=0,endLane=null){
   if(lane<0||lane>=6)return;
 
-  const width=state.noteKind.startsWith("wide_")?2:1;
+  const width=isSliderKind(state.noteKind)
+    ? sliderWidthForKind(state.noteKind)
+    : (state.noteKind.startsWith("wide_")?2:1);
   if(lane+width>6)return;
   
   const snapVal=Number(document.getElementById("snapInput").value)||16;
@@ -836,6 +895,9 @@ function addNote(lane,time,duration=0,endLane=null){
     endLane:endLane!==null?endLane:lane,
     width,
     kind:state.noteKind,
+    direction:isSliderKind(state.noteKind)
+      ? (state.noteKind==="slider_right"?"right":"left")
+      : undefined,
     duration:isHold?Math.max(2/snapVal,duration):0
   };
 
@@ -983,11 +1045,15 @@ chart.addEventListener("pointerdown",e=>{
     }
 
     if(x<LANES_X)return;
-    const lane=Math.floor((x-LANES_X)/(LANE_W+GAP));
+    let lane=Math.floor((x-LANES_X)/(LANE_W+GAP));
     if(lane<0||lane>=6)return;
 
     const time=snapTime(yToTime(y));
-    const width=state.noteKind.startsWith("wide_")?2:1;
+    const placingSlider=isSliderKind(state.noteKind);
+    if(placingSlider) lane=sliderLaneForKind(state.noteKind);
+    const width=placingSlider
+      ? sliderWidthForKind(state.noteKind)
+      : (state.noteKind.startsWith("wide_")?2:1);
 
     if(lane+width>6)return;
     if(state.noteKind!=="hold" && isNoteOverlapping(lane, time, width, 0)) return;
@@ -1119,10 +1185,15 @@ function renderSelection(){
   const editKindGroup=document.getElementById("editKindGroup");
   const editNameGroup=document.getElementById("editNameGroup");
   const editBpmGroup=document.getElementById("editBpmGroup");
+  const editDirectionGroup=document.getElementById("editDirectionGroup");
+  const editDirection=document.getElementById("editDirection");
 
   if(n){
     editDurGroup.hidden=false;editKindGroup.hidden=false;editNameGroup.hidden=true;editBpmGroup.hidden=true;
-    editLane.disabled=false;editLane.min=1;editLane.max=6;editLane.step="0.01";
+    editDirectionGroup.hidden=!isSliderKind(n.kind);
+    editDirection.value=n.direction==="right"?"right":"left";
+    editLane.disabled=isSliderKind(n.kind);
+    editLane.min=1;editLane.max=6;editLane.step="0.01";
     editTime.value=+timeToBeats(n.time).toFixed(2);
     editLane.value=+(n.lane+1).toFixed(2);
     document.getElementById("editDuration").value=+timeToBeats(n.duration||0).toFixed(2);
@@ -1163,10 +1234,19 @@ document.getElementById("applyEdit").addEventListener("click",()=>{
   if(n){
     const beatDur=Math.max(0,Number(document.getElementById("editDuration").value)||0);
     const newTime=beatsToTime(beatPos);
-    const newLane=Math.max(0,Math.min(6,Number(document.getElementById("editLane").value)-1));
-    const newEndLane=Math.max(0,Math.min(6,Number(document.getElementById("editEndLane").value)-1));
     const newKind=document.getElementById("editKind").value;
-    const newWidth=newKind.startsWith("wide_")?2:1;
+    let newLane=Math.max(0,Math.min(5,Number(document.getElementById("editLane").value)-1));
+    const newEndLane=Math.max(0,Math.min(5,Number(document.getElementById("editEndLane").value)-1));
+
+    if(isSliderKind(newKind)) newLane=sliderLaneForKind(newKind);
+
+    const newWidth=isSliderKind(newKind)
+      ? sliderWidthForKind(newKind)
+      : (newKind.startsWith("wide_")?2:1);
+
+    const newDirection=isSliderKind(newKind)
+      ? (document.getElementById("editDirection").value==="right"?"right":"left")
+      : undefined;
 
     const newDuration=newKind==="hold"
       ? Math.max(0,beatsToTime(timeToBeats(newTime)+beatDur)-newTime)
@@ -1177,12 +1257,23 @@ document.getElementById("applyEdit").addEventListener("click",()=>{
       return;
     }
 
+    if(newKind!=="hold" && isNoteOverlapping(newLane,newTime,newWidth,0,n.id)){
+      alert("その位置には他のノーツが重なっています。");
+      return;
+    }
+    if(newKind==="hold" && isNoteOverlapping(newLane,newTime,newWidth,newDuration,n.id)){
+      alert("その位置には他のノーツが重なっています。");
+      return;
+    }
+
     n.time=newTime;
     n.lane=newLane;
     n.endLane=newKind==="hold"?newEndLane:newLane;
     n.duration=newDuration;
     n.kind=newKind;
     n.width=newWidth;
+    if(isSliderKind(newKind)) n.direction=newDirection;
+    else delete n.direction;
     state.duration=Math.max(state.duration,n.time+n.duration);
   }else if(b){
     b.time=beatsToTime(beatPos);
@@ -1449,10 +1540,20 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
       
       const loadedNotes = Array.isArray(d.notes) ? d.notes : [];
       state.notes = loadedNotes.filter(n => {
-        if (n.kind === "hold" && (Number(n.duration) || 0) <= 0) {
-          return false;
-        }
+        if (n.kind === "hold" && (Number(n.duration) || 0) <= 0) return false;
         return true;
+      }).map(n => {
+        const note={...n};
+        if(isSliderKind(note.kind)){
+          note.lane=sliderLaneForKind(note.kind);
+          note.width=sliderWidthForKind(note.kind);
+          note.endLane=note.lane;
+          note.duration=0;
+          note.direction=note.direction==="right" ? "right" : "left";
+        }else{
+          note.width=note.width||1;
+        }
+        return note;
       });
 
       state.effects=Array.isArray(d.effects)?d.effects:[];
