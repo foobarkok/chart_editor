@@ -1357,9 +1357,16 @@ function scheduleNotesSE(startSec){
 
   const audioDuration=state.audioDuration??state.buffer?.duration??0;
   const nowCtx=state.audioContext.currentTime;
+  const scheduledTimes=new Set();
+
   for(const n of state.notes){
     if(n.kind==="tap_yellow") continue;
     if(n.time>=startSec && n.time<=audioDuration){
+      // ミリ秒単位に丸めて同じタイミングの発声を重複除去
+      const timeKey=Math.round(n.time * 1000);
+      if(scheduledTimes.has(timeKey)) continue;
+      scheduledTimes.add(timeKey);
+
       const delay=n.time-startSec;
       const seSource=state.audioContext.createBufferSource();
       seSource.buffer=kickBuffer;
