@@ -618,7 +618,46 @@ function draw(){
     ctx.fillText((s.ratio===0.5?"1/2":s.ratio)+"x",SPD_X+SPD_W/2,y+4);
   }
 
+  // 1. ロングノーツを背景として先に描画
   for(const n of state.notes){
+    if(n.kind !== "hold") continue;
+
+    let x=LANES_X+n.lane*(LANE_W+GAP)+6;
+    const y=timeToY(n.time);
+    let width=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
+    const selected=n.id===state.selectedId;
+
+    const endLane=n.endLane!==undefined?n.endLane:n.lane;
+    const x2=LANES_X+endLane*(LANE_W+GAP)+6;
+    const y2=timeToY(n.time+(n.duration||0));
+
+    const nMinY=Math.min(y,y2);
+    const nMaxY=Math.max(y,y2);
+    if(nMaxY<-20||nMinY>H+20)continue;
+
+    ctx.save();
+    ctx.globalAlpha=0.5;
+
+    ctx.fillStyle=color(n.kind);
+    ctx.strokeStyle=selected?"#fff":"rgba(255,255,255,.6)";
+    ctx.lineWidth=selected?3:1;
+
+    ctx.beginPath();
+    ctx.moveTo(x,y);
+    ctx.lineTo(x+width,y);
+    ctx.lineTo(x2+width,y2);
+    ctx.lineTo(x2,y2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // 2. 単発・スライダーなどの通常ノーツを前面に描画
+  for(const n of state.notes){
+    if(n.kind === "hold") continue;
+
     let x=LANES_X+n.lane*(LANE_W+GAP)+6;
     const y=timeToY(n.time);
     let width=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
@@ -653,32 +692,6 @@ function draw(){
       ctx.lineTo(ax2-(dir==="right"?7:-7),y-5);
       ctx.lineTo(ax2-(dir==="right"?7:-7),y+5);
       ctx.closePath();ctx.fill();
-      ctx.restore();
-    }else if(n.kind==="hold"){
-      const endLane=n.endLane!==undefined?n.endLane:n.lane;
-      const x2=LANES_X+endLane*(LANE_W+GAP)+6;
-      const y2=timeToY(n.time+(n.duration||0));
-
-      const nMinY=Math.min(y,y2);
-      const nMaxY=Math.max(y,y2);
-      if(nMaxY<-20||nMinY>H+20)continue;
-
-      ctx.save();
-      ctx.globalAlpha=0.5;
-
-      ctx.fillStyle=color(n.kind);
-      ctx.strokeStyle=selected?"#fff":"rgba(255,255,255,.6)";
-      ctx.lineWidth=selected?3:1;
-
-      ctx.beginPath();
-      ctx.moveTo(x,y);
-      ctx.lineTo(x+width,y);
-      ctx.lineTo(x2+width,y2);
-      ctx.lineTo(x2,y2);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
       ctx.restore();
     }else{
       if(y+18<0||y-18>H)continue;
@@ -758,28 +771,17 @@ document.querySelectorAll(".mode").forEach(b=>b.addEventListener("click",()=>set
 document.querySelectorAll(".note-type").forEach(b=>b.addEventListener("click",()=>setKind(b.dataset.group, b.dataset.kind)));
 
 function hitTest(x,y){
+  // 1. 単発・スライダーなど前面のノーツを優先選択
   for(let i=state.notes.length-1;i>=0;i--){
     const n=state.notes[i];
+    if(n.kind==="hold") continue;
+
     let x1=LANES_X+n.lane*(LANE_W+GAP)+6;
     let y1=timeToY(n.time);
     let width=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
 
     if(isSliderKind(n.kind)){
       if(x>=x1&&x<=x1+width&&y>=y1-10&&y<=y1+10)return n;
-    }else if(n.kind==="hold"){
-      const y2=timeToY(n.time+(n.duration||0));
-      const minY=Math.min(y1,y2);
-      const maxY=Math.max(y1,y2);
-
-      if(y>=minY&&y<=maxY){
-        const endL=n.endLane!==undefined?n.endLane:n.lane;
-        const x2=LANES_X+endL*(LANE_W+GAP)+6;
-        const t=Math.abs(y2-y1)<0.001?0:(y-y1)/(y2-y1);
-        const curX=x1+(x2-x1)*t;
-        if(x>=curX&&x<=curX+width){
-          return n;
-        }
-      }
     }else{
       if(n.kind==="tap_yellow"){
         x1 += 8;
@@ -788,6 +790,31 @@ function hitTest(x,y){
       if(x>=x1&&x<=x1+width&&y>=y1-9&&y<=y1+9)return n;
     }
   }
+
+  // 2. 次に背景のロングノーツを判定
+  for(let i=state.notes.length-1;i>=0;i--){
+    const n=state.notes[i];
+    if(n.kind!=="hold") continue;
+
+    let x1=LANES_X+n.lane*(LANE_W+GAP)+6;
+    let y1=timeToY(n.time);
+    let width=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
+
+    const y2=timeToY(n.time+(n.duration||0));
+    const minY=Math.min(y1,y2);
+    const maxY=Math.max(y1,y2);
+
+    if(y>=minY&&y<=maxY){
+      const endL=n.endLane!==undefined?n.endLane:n.lane;
+      const x2=LANES_X+endL*(LANE_W+GAP)+6;
+      const t=Math.abs(y2-y1)<0.001?0:(y-y1)/(y2-y1);
+      const curX=x1+(x2-x1)*t;
+      if(x>=curX&&x<=curX+width){
+        return n;
+      }
+    }
+  }
+
   return null;
 }
 
@@ -828,17 +855,22 @@ function hitTestEffect(x,y){
   return null;
 }
 
-function getOverlappingNotes(lane, time, width, duration=0, ignoreId=null){
+function getOverlappingNotes(lane, time, width, duration=0, ignoreId=null, checkingKind=null){
   const overlaps=[];
   const newStartLane = lane;
   const newEndLane = lane + width - 1;
   const newStartTime = time;
   const newEndTime = duration > 0 ? time + duration : time + 0.001;
 
+  const isCheckingHold = checkingKind === "hold" || (checkingKind === null && duration > 0);
   const EPS = 0.0001;
 
   for(const n of state.notes){
     if(ignoreId && n.id === ignoreId) continue;
+
+    const isExistingHold = n.kind === "hold";
+    // ロングノーツと非ロングノーツの重複は許可する（同グループ間でのみ衝突チェック）
+    if(isCheckingHold !== isExistingHold) continue;
 
     const nStartLane = n.lane;
     const nEndLane = n.lane + (n.width || 1) - 1;
@@ -858,8 +890,8 @@ function getOverlappingNotes(lane, time, width, duration=0, ignoreId=null){
   return overlaps;
 }
 
-function isNoteOverlapping(lane, time, width, duration=0, ignoreId=null){
-  return getOverlappingNotes(lane, time, width, duration, ignoreId).length > 0;
+function isNoteOverlapping(lane, time, width, duration=0, ignoreId=null, checkingKind=null){
+  return getOverlappingNotes(lane, time, width, duration, ignoreId, checkingKind).length > 0;
 }
 
 function addNote(lane,time,duration=0,endLane=null){
@@ -875,7 +907,7 @@ function addNote(lane,time,duration=0,endLane=null){
   const isHold = state.noteKind === "hold";
   const dur = isHold ? Math.max(0, duration) : 0;
 
-  const overlaps = getOverlappingNotes(lane, snappedTime, width, dur);
+  const overlaps = getOverlappingNotes(lane, snappedTime, width, dur, null, state.noteKind);
 
   if(overlaps.length > 0){
     if(isHold){
@@ -1010,7 +1042,10 @@ chart.addEventListener("pointerdown",e=>{
       return;
     }
     if(hit){
-      if(hit.kind !== "hold" && state.noteKind !== "hold"){
+      // 配置ノーツとヒットしたノーツがどちらも非ロング（またはどちらもロング）の場合のみトグル削除
+      const isHitHold = hit.kind === "hold";
+      const isPlacingHold = state.noteKind === "hold";
+      if(!isHitHold && !isPlacingHold){
         state.notes=state.notes.filter(n=>n.id!==hit.id);
         if(state.selectedId===hit.id)state.selectedId=null;
         renderSelection();draw();
@@ -1056,7 +1091,7 @@ chart.addEventListener("pointerdown",e=>{
       : (state.noteKind.startsWith("wide_")?2:1);
 
     if(lane+width>6)return;
-    if(state.noteKind!=="hold" && isNoteOverlapping(lane, time, width, 0)) return;
+    if(state.noteKind!=="hold" && isNoteOverlapping(lane, time, width, 0, null, state.noteKind)) return;
 
     if(state.noteKind==="hold"){
       const snapVal=Number(document.getElementById("snapInput").value)||16;
@@ -1257,11 +1292,11 @@ document.getElementById("applyEdit").addEventListener("click",()=>{
       return;
     }
 
-    if(newKind!=="hold" && isNoteOverlapping(newLane,newTime,newWidth,0,n.id)){
+    if(newKind!=="hold" && isNoteOverlapping(newLane,newTime,newWidth,0,n.id,newKind)){
       alert("その位置には他のノーツが重なっています。");
       return;
     }
-    if(newKind==="hold" && isNoteOverlapping(newLane,newTime,newWidth,newDuration,n.id)){
+    if(newKind==="hold" && isNoteOverlapping(newLane,newTime,newWidth,newDuration,n.id,newKind)){
       alert("その位置には他のノーツが重なっています。");
       return;
     }
@@ -1520,8 +1555,9 @@ function chartData(){
 function saveJSON(){
   const blob=new Blob([JSON.stringify(chartData(),null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
-  const link=document.createElement("a");
-  link.href=url;link.download="chart.json";link.click();
+  const link=document.getElementById("saveButton");
+  const a=document.createElement("a");
+  a.href=url;a.download="chart.json";a.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
