@@ -51,6 +51,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   <button id="newButton">新規</button>
   <button id="loadButton">JSON読込</button>
   <button id="saveButton">JSON保存</button>
+  <button id="exportGameButton" style="background:#273653;border-color:var(--accent)">🎮 ゲーム用保存</button>
   <input id="jsonInput" type="file" accept=".json,application/json" hidden>
   <div class="group"><label>初期BPM</label><input id="bpmInput" type="number" min="1" max="500" step=".01" value="120" style="width:75px"></div>
   <div class="group"><label>Snap</label><select id="snapInput">
@@ -869,7 +870,6 @@ function getOverlappingNotes(lane, time, width, duration=0, ignoreId=null, check
     if(ignoreId && n.id === ignoreId) continue;
 
     const isExistingHold = n.kind === "hold";
-    // ロングノーツと非ロングノーツの重複は許可する（同グループ間でのみ衝突チェック）
     if(isCheckingHold !== isExistingHold) continue;
 
     const nStartLane = n.lane;
@@ -1042,7 +1042,6 @@ chart.addEventListener("pointerdown",e=>{
       return;
     }
     if(hit){
-      // 配置ノーツとヒットしたノーツがどちらも非ロング（またはどちらもロング）の場合のみトグル削除
       const isHitHold = hit.kind === "hold";
       const isPlacingHold = state.noteKind === "hold";
       if(!isHitHold && !isPlacingHold){
@@ -1362,7 +1361,6 @@ function scheduleNotesSE(startSec){
   for(const n of state.notes){
     if(n.kind==="tap_yellow") continue;
     if(n.time>=startSec && n.time<=audioDuration){
-      // ミリ秒単位に丸めて同じタイミングの発声を重複除去
       const timeKey=Math.round(n.time * 1000);
       if(scheduledTimes.has(timeKey)) continue;
       scheduledTimes.add(timeKey);
@@ -1562,13 +1560,57 @@ function chartData(){
 function saveJSON(){
   const blob=new Blob([JSON.stringify(chartData(),null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
-  const link=document.getElementById("saveButton");
   const a=document.createElement("a");
   a.href=url;a.download="chart.json";a.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
+// --- ゲーム用JSON (chart.chart) エクスポート機能 ---
+function exportGameChart(){
+  const lines = [];
+  const maxBeat = Math.ceil(timeToBeats(state.duration));
+  
+  // 1拍ごとの線を生成
+  for(let b = 0; b <= maxBeat; b++){
+    const t = beatsToTime(b);
+    lines.push({
+      kind: "line",
+      beat: b,
+      isMeasure: (b % 4 === 0),
+      time: t,
+      pos: timeToDistance(t)
+    });
+  }
+
+  // ノーツに pos (およびロングノーツの endPos) を付与
+  const exportedNotes = state.notes.map(n => {
+    const item = {
+      ...n,
+      pos: timeToDistance(n.time)
+    };
+    if(n.kind === "hold" && n.duration > 0){
+      item.endPos = timeToDistance(n.time + n.duration);
+    }
+    return item;
+  });
+
+  // ノーツと線を結合し、流れてくる順 (pos の昇順) にソート
+  const combined = [...lines, ...exportedNotes];
+  combined.sort((a, b) => a.pos - b.pos || a.time - b.time);
+
+  // 先頭に '%' を付与して保存
+  const jsonStr = "%" + JSON.stringify(combined, null, 2);
+  const blob = new Blob([jsonStr], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "chart.chart";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 document.getElementById("saveButton").addEventListener("click",saveJSON);
+document.getElementById("exportGameButton").addEventListener("click",exportGameChart);
 
 document.getElementById("loadButton").addEventListener("click",()=>document.getElementById("jsonInput").click());
 document.getElementById("jsonInput").addEventListener("change",e=>{
