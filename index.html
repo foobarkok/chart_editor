@@ -180,7 +180,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
 "use strict";
 
 const state={
-  version:1,bpm:120,duration:60,
+  bpm:120,duration:60,
   notes:[],speeds:[],effects:[],bpms:[],
   effectTypes:["effect","fever","bg_change"],
   activeEffectType:"effect",
@@ -1542,7 +1542,6 @@ document.addEventListener("keydown",e=>{
 
 function chartData(){
   return {
-    version:state.version,
     bpm:state.bpm,
     duration:state.duration,
     notes:state.notes,
