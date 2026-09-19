@@ -738,14 +738,24 @@ function updateUI(){
 function loop(){
   if(state.playing){
     const ct=currentTime();
-    const H=chartHeight();
-    const targetY=H * 0.75;
-    const currentY=timeToY(ct);
+    const maxDur=state.audioDuration??state.buffer?.duration??state.duration;
 
-    if(currentY >= targetY){
-      state.offset=distanceToTime(Math.max(0, timeToDistance(ct) - (targetY - TOP) / state.zoom));
+    // 音声バッファが無い場合などで末尾に到達した際の自動停止処理
+    if(!state.buffer && ct >= maxDur){
+      state.playing = false;
+      state.pausedAt = maxDur;
+      clearSE();
+      updateUI();
+    } else {
+      const H=chartHeight();
+      const targetY=H * 0.75;
+      const currentY=timeToY(ct);
+
+      if(currentY >= targetY){
+        state.offset=distanceToTime(Math.max(0, timeToDistance(ct) - (targetY - TOP) / state.zoom));
+      }
+      updateUI();
     }
-    updateUI();
   }
   requestAnimationFrame(loop);
 }
@@ -931,6 +941,7 @@ function addNote(lane,time,duration=0,endLane=null){
 
   state.notes.push(n);
   state.selectedId=n.id;
+  state.duration=Math.max(state.duration, n.time+n.duration);
   renderSelection();
   draw();
 }
@@ -1283,16 +1294,16 @@ document.getElementById("applyEdit").addEventListener("click",()=>{
       : 0;
     
     if(newKind === "hold" && newDuration <= 0){
-      alert("ロングノーツの長さを0に設定することはできません。");
+      document.getElementById("status").textContent="ロングノーツの長さを0に設定することはできません";
       return;
     }
 
     if(newKind!=="hold" && isNoteOverlapping(newLane,newTime,newWidth,0,n.id,newKind)){
-      alert("その位置には他のノーツが重なっています。");
+      document.getElementById("status").textContent="その位置には他のノーツが重なっています";
       return;
     }
     if(newKind==="hold" && isNoteOverlapping(newLane,newTime,newWidth,newDuration,n.id,newKind)){
-      alert("その位置には他のノーツが重なっています。");
+      document.getElementById("status").textContent="その位置には他のノーツが重なっています";
       return;
     }
 
@@ -1350,13 +1361,13 @@ function scheduleNotesSE(startSec){
   clearSE();
   if(!kickBuffer||!state.audioContext)return;
 
-  const audioDuration=state.audioDuration??state.buffer?.duration??0;
+  const maxDuration=state.audioDuration??state.buffer?.duration??state.duration;
   const nowCtx=state.audioContext.currentTime;
   const scheduledTimes=new Set();
 
   for(const n of state.notes){
     if(n.kind==="tap_yellow") continue;
-    if(n.time>=startSec && n.time<=audioDuration){
+    if(n.time>=startSec && n.time<=maxDuration){
       const timeKey=Math.round(n.time * 1000);
       if(scheduledTimes.has(timeKey)) continue;
       scheduledTimes.add(timeKey);
@@ -1398,8 +1409,6 @@ document.getElementById("audioInput").addEventListener("change",e=>{
 });
 
 async function playAudio(){
-  if(!state.buffer)return;
-
   if(state.playing){
     state.pausedAt=currentTime();
     state.playing=false;
@@ -1410,31 +1419,35 @@ async function playAudio(){
 
   await initAudioContext();
 
-  const source=state.audioContext.createBufferSource();
-  source.buffer=state.buffer;
-  source.connect(state.audioContext.destination);
-
-  const audioDuration=state.audioDuration??state.buffer.duration;
-  const offset=Math.min(state.pausedAt,audioDuration);
-  if(offset>=audioDuration){
-    state.pausedAt=audioDuration;
+  const maxDuration=state.audioDuration??state.buffer?.duration??state.duration;
+  const offset=Math.min(state.pausedAt,maxDuration);
+  if(offset>=maxDuration){
+    state.pausedAt=maxDuration;
     return;
   }
-  source.start(0,offset);
+
+  if(state.buffer){
+    const source=state.audioContext.createBufferSource();
+    source.buffer=state.buffer;
+    source.connect(state.audioContext.destination);
+    source.start(0,offset);
+
+    source.onended=()=>{
+      if(state.playing){
+        state.playing=false;
+        state.pausedAt=state.audioDuration??state.buffer?.duration??state.duration;
+        clearSE();
+      }
+    };
+    state.source=source;
+  }else{
+    state.source=null;
+  }
 
   state.startedAt=state.audioContext.currentTime-offset;
-  state.source=source;
   state.playing=true;
 
   scheduleNotesSE(offset);
-
-  source.onended=()=>{
-    if(state.playing){
-      state.playing=false;
-      state.pausedAt=state.audioDuration??state.buffer?.duration??state.duration;
-      clearSE();
-    }
-  };
 }
 
 function stopAudio(){
@@ -1657,7 +1670,8 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
       state.selectedId=null;
       renderEffectTypes();renderSelection();resize();
     }catch(err){
-      console.error(err);alert("JSONの読み込みに失敗しました。");
+      console.error(err);
+      document.getElementById("status").textContent="JSONの読み込みに失敗しました。";
     }
   };
   reader.readAsText(file);
