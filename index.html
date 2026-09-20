@@ -1603,8 +1603,28 @@ function exportGameChart(){
     return item;
   });
 
-  // ノーツと線を結合し、流れてくる順 (pos の昇順) にソート
-  const combined = [...lines, ...exportedNotes];
+  // 速度変化から id を除外し、kind: "speed" と pos を付与
+  const exportedSpeeds = state.speeds.map(s => {
+    const { id, ...rest } = s;
+    return {
+      kind: "speed",
+      ...rest,
+      pos: timeToDistance(s.time)
+    };
+  });
+
+  // エフェクトから id を除外し、kind: "effect" と pos を付与
+  const exportedEffects = state.effects.map(e => {
+    const { id, ...rest } = e;
+    return {
+      kind: "effect",
+      ...rest,
+      pos: timeToDistance(e.time)
+    };
+  });
+
+  // 全要素を結合し、流れてくる順 (pos の昇順) にソート
+  const combined = [...lines, ...exportedNotes, ...exportedSpeeds, ...exportedEffects];
   combined.sort((a, b) => a.pos - b.pos || a.time - b.time);
 
   // 全体データ構造の構築
