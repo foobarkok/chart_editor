@@ -1136,13 +1136,25 @@ function drawPreview(){
   if(!holdDrag)return;
 
   const x=LANES_X+holdDrag.lane*(LANE_W+GAP)+6;
-  const y=timeToY(holdDrag.time);
-  const h=Math.max(14,holdDrag.duration*state.zoom);
+  const y1=timeToY(holdDrag.time);
+  const y2=timeToY(holdDrag.time+holdDrag.duration);
+  const width=LANE_W-12;
 
+  ctx.save();
   ctx.globalAlpha=.5;
   ctx.fillStyle="#f3f5f8";
-  ctx.fillRect(x,y,LANE_W-12,h);
-  ctx.globalAlpha=1;
+  ctx.strokeStyle="#ffffff";
+  ctx.lineWidth=1;
+
+  ctx.beginPath();
+  ctx.moveTo(x, y1);
+  ctx.lineTo(x + width, y1);
+  ctx.lineTo(x + width, y2);
+  ctx.lineTo(x, y2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
 }
 
 function renderEffectTypes(){
@@ -1573,12 +1585,10 @@ function saveJSON(){
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
-// --- ゲーム用JSON (chart.chart) エクスポート機能 ---
 function exportGameChart(){
   const lines = [];
   const maxBeat = Math.ceil(timeToBeats(state.duration));
   
-  // 1拍ごとの線を生成
   for(let b = 0; b <= maxBeat; b++){
     const t = beatsToTime(b);
     lines.push({
@@ -1590,7 +1600,6 @@ function exportGameChart(){
     });
   }
 
-  // ノーツから id を除外し、pos (およびロングノーツの endPos) を付与
   const exportedNotes = state.notes.map(n => {
     const { id, ...rest } = n;
     const item = {
@@ -1603,7 +1612,6 @@ function exportGameChart(){
     return item;
   });
 
-  // 速度変化から id を除外し、kind: "speed" と pos を付与
   const exportedSpeeds = state.speeds.map(s => {
     const { id, ...rest } = s;
     return {
@@ -1613,7 +1621,6 @@ function exportGameChart(){
     };
   });
 
-  // エフェクトから id を除外し、kind: "effect" と pos を付与
   const exportedEffects = state.effects.map(e => {
     const { id, ...rest } = e;
     return {
@@ -1623,18 +1630,15 @@ function exportGameChart(){
     };
   });
 
-  // 全要素を結合し、流れてくる順 (pos の昇順) にソート
   const combined = [...lines, ...exportedNotes, ...exportedSpeeds, ...exportedEffects];
   combined.sort((a, b) => a.pos - b.pos || a.time - b.time);
 
-  // 全体データ構造の構築
   const gameData = {
     bpm: state.bpm,
     duration: state.duration,
     objs: combined
   };
 
-  // 先頭に '%' を付与して保存
   const jsonStr = "%" + JSON.stringify(gameData, null, 2);
   const blob = new Blob([jsonStr], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
