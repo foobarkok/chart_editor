@@ -531,7 +531,6 @@ function draw(){
       const beatInMeasure=(roundedBeat%4)+1;
       ctx.textAlign="right";
 
-      // 反転状態に合わせて線の「上」または「下」にテキストを配置
       if(state.flipVertical){
         ctx.textBaseline="bottom";
       }else{
@@ -722,15 +721,13 @@ function draw(){
     ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(WAVE_X+WAVE_W,py);ctx.stroke();
   }
 
-  ctx.restore(); // クリッピング解除
+  ctx.restore();
 
-  // ヘッダー背景およびテキストの最前面描画
   ctx.fillStyle="#171a20";
   ctx.fillRect(0,0,W,TOP);
   ctx.strokeStyle="#485266";
   ctx.beginPath();ctx.moveTo(0,TOP-.5);ctx.lineTo(W,TOP-.5);ctx.stroke();
 
-  // 角丸四角ラベル（バッジ）を描画する共通関数
   function drawHeaderBadge(text, centerX, borderColor, textColor, bgColor) {
     ctx.font = "bold 11px system-ui";
     const w = Math.max(ctx.measureText(text).width + 12, 22);
@@ -753,7 +750,6 @@ function draw(){
     ctx.textBaseline = "alphabetic";
   }
 
-  // 各ラベルを対応するレーンカラーの角丸四角で描画
   drawHeaderBadge("拍", BEAT_W/2, "#485266", "#a3b0c9", "rgba(72, 82, 102, 0.25)");
   drawHeaderBadge("BPM", BPM_X+BPM_W/2, "#ff5364", "#ff8e9b", "rgba(255, 83, 100, 0.25)");
 
@@ -1058,7 +1054,7 @@ chart.addEventListener("pointerdown",e=>{
   const x=e.clientX-r.left;
   const y=e.clientY-r.top;
 
-  if(y<TOP) return; // ヘッダー上のクリックは無視
+  if(y<TOP) return;
 
   if(x>=WAVE_X&&x<=WAVE_X+WAVE_W){
     seekTo(yToTime(y), true);
@@ -1161,9 +1157,7 @@ chart.addEventListener("pointerdown",e=>{
     if(state.noteKind!=="hold" && isNoteOverlapping(lane, time, width, 0, null, state.noteKind)) return;
 
     if(state.noteKind==="hold"){
-      const snapVal=Number(document.getElementById("snapInput").value)||16;
-      const initialDur=beatsToTime(timeToBeats(time)+4/snapVal)-time;
-      holdDrag={lane,time,startY:y,duration:Math.max(0, initialDur)};
+      holdDrag={lane, startTime: time, currentTime: time};
       chart.setPointerCapture(e.pointerId);
       drawPreview();
     }else{
@@ -1176,14 +1170,21 @@ chart.addEventListener("pointermove",e=>{
   if(!holdDrag)return;
   const r=chart.getBoundingClientRect();
   const y=e.clientY-r.top;
-  const endTime=snapTime(yToTime(y));
-  holdDrag.duration=Math.max(0, endTime-holdDrag.time);
+  holdDrag.currentTime=snapTime(yToTime(y));
   drawPreview();
 });
 
 chart.addEventListener("pointerup",()=>{
   if(!holdDrag)return;
-  addNote(holdDrag.lane,holdDrag.time,holdDrag.duration);
+  let startTime = Math.min(holdDrag.startTime, holdDrag.currentTime);
+  let duration = Math.abs(holdDrag.currentTime - holdDrag.startTime);
+
+  if (duration === 0) {
+    const snapVal = Number(document.getElementById("snapInput").value) || 16;
+    duration = beatsToTime(timeToBeats(startTime) + 4 / snapVal) - startTime;
+  }
+
+  addNote(holdDrag.lane, startTime, duration);
   holdDrag=null;
   draw();
 });
@@ -1196,9 +1197,17 @@ function drawPreview(){
   draw();
   if(!holdDrag)return;
 
+  let startTime = Math.min(holdDrag.startTime, holdDrag.currentTime);
+  let duration = Math.abs(holdDrag.currentTime - holdDrag.startTime);
+
+  if (duration === 0) {
+    const snapVal = Number(document.getElementById("snapInput").value) || 16;
+    duration = beatsToTime(timeToBeats(startTime) + 4 / snapVal) - startTime;
+  }
+
   const x=LANES_X+holdDrag.lane*(LANE_W+GAP)+6;
-  const y1=timeToY(holdDrag.time);
-  const y2=timeToY(holdDrag.time+holdDrag.duration);
+  const y1=timeToY(startTime);
+  const y2=timeToY(startTime+duration);
   const width=LANE_W-12;
 
   ctx.save();
