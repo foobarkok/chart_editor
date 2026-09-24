@@ -11,6 +11,7 @@
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font:14px system-ui,sans-serif}
 button,input,select{font:inherit;color:inherit;background:var(--panel2);border:1px solid #3c4351;border-radius:5px;padding:6px 9px}
 button{cursor:pointer}button:hover{background:#2b3140}
+button.active{background:#273653;border-color:var(--accent);outline:1px solid var(--accent)}
 .app{height:100%;display:grid;grid-template-rows:auto 1fr}
 .toolbar{display:flex;align-items:center;gap:7px;padding:7px 9px;background:#171a20;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .group{display:flex;align-items:center;gap:5px}.toolbar label,.small{font-size:11px;color:var(--muted)}.spacer{flex:1}
@@ -60,6 +61,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
     <option value="24">1/24</option><option value="32">1/32</option>
   </select></div>
   <button id="zoomOut">−</button><button id="zoomIn">＋</button>
+  <button id="flipButton">↕ 上下反転</button>
   <span class="spacer"></span><span id="status" class="status">準備完了</span>
 </header>
 
@@ -186,7 +188,7 @@ const state={
   activeEffectType:"effect",
   selectedId:null,
   noteKind:"tap_white",speedKind:"speed_1",mode:"place",
-  zoom:180,offset:0,
+  zoom:180,offset:0,flipVertical:false,
   audioContext:null,buffer:null,audioDuration:null,source:null,
   playing:false,startedAt:0,pausedAt:0
 };
@@ -312,11 +314,19 @@ function distanceToTime(d){
 }
 
 function timeToY(t){
-  return TOP+(timeToDistance(t)-timeToDistance(state.offset))*state.zoom;
+  const distDelta=(timeToDistance(t)-timeToDistance(state.offset))*state.zoom;
+  if(state.flipVertical){
+    return chartHeight()-distDelta;
+  }
+  return TOP+distDelta;
 }
 
 function yToTime(y){
-  const d=timeToDistance(state.offset)+(y-TOP)/state.zoom;
+  const H=chartHeight();
+  const distOffset=timeToDistance(state.offset);
+  const d=state.flipVertical
+    ? distOffset+(H-y)/state.zoom
+    : distOffset+(y-TOP)/state.zoom;
   return distanceToTime(d);
 }
 
@@ -379,14 +389,11 @@ function draw(){
   ctx.clearRect(0,0,W,H);
   ctx.fillStyle="#0d0f14";ctx.fillRect(0,0,W,H);
 
+  // 背景枠の描画（画面全体）
   ctx.fillStyle="#12151b";
   ctx.fillRect(0,0,BEAT_W,H);
   ctx.strokeStyle="#485266";
   ctx.strokeRect(.5,.5,BEAT_W-1,H-1);
-  ctx.fillStyle="#a3b0c9";
-  ctx.font="11px system-ui";
-  ctx.textAlign="center";
-  ctx.fillText("拍",BEAT_W/2,18);
 
   ctx.fillStyle="#1c1416";
   ctx.fillRect(BPM_X,0,BPM_W,H);
@@ -394,10 +401,6 @@ function draw(){
   ctx.lineWidth=3;
   ctx.strokeRect(BPM_X+1.5,1.5,BPM_W-3,H-3);
   ctx.lineWidth=1;
-  ctx.fillStyle="#ff8e9b";
-  ctx.font="11px system-ui";
-  ctx.textAlign="center";
-  ctx.fillText("BPM",BPM_X+BPM_W/2,18);
 
   for(let lane=0;lane<6;lane++){
     const x=LANES_X+lane*(LANE_W+GAP);
@@ -405,10 +408,6 @@ function draw(){
     ctx.fillRect(x,0,LANE_W,H);
     ctx.strokeStyle="#485266";
     ctx.strokeRect(x+.5,.5,LANE_W-1,H-1);
-    ctx.fillStyle="#a3b0c9";
-    ctx.font="11px system-ui";
-    ctx.textAlign="center";
-    ctx.fillText(String(lane+1),x+LANE_W/2,18);
   }
 
   ctx.fillStyle="#151820";
@@ -417,10 +416,6 @@ function draw(){
   ctx.lineWidth=3;
   ctx.strokeRect(SPD_X+1.5,1.5,SPD_W-3,H-3);
   ctx.lineWidth=1;
-  ctx.fillStyle="#a3b0c9";
-  ctx.font="11px system-ui";
-  ctx.textAlign="center";
-  ctx.fillText("変速",SPD_X+SPD_W/2,18);
 
   for(let elane=0;elane<3;elane++){
     const ex=EFF_X+elane*(EFF_LANE_W+EFF_GAP);
@@ -430,20 +425,18 @@ function draw(){
     ctx.lineWidth=3;
     ctx.strokeRect(ex+1.5,1.5,EFF_LANE_W-3,H-3);
     ctx.lineWidth=1;
-    ctx.fillStyle="#cbb2ff";
-    ctx.font="11px system-ui";
-    ctx.textAlign="center";
-    ctx.fillText("効果"+(elane+1),ex+EFF_LANE_W/2,18);
   }
 
   ctx.fillStyle="#11141a";
   ctx.fillRect(WAVE_X,0,WAVE_W,H);
   ctx.strokeStyle="#485266";
   ctx.strokeRect(WAVE_X+.5,.5,WAVE_W-1,H-1);
-  ctx.fillStyle="#a3b0c9";
-  ctx.font="11px system-ui";
-  ctx.textAlign="center";
-  ctx.fillText("波形",WAVE_CENTER,18);
+
+  // 譜面領域（TOP〜H）をクリッピングしてノーツ描画
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, TOP, W, H - TOP);
+  ctx.clip();
 
   if(state.buffer){
     const chanData=state.buffer.getChannelData(0);
@@ -502,10 +495,10 @@ function draw(){
   const subDiv=snapVal>0?(snapVal/4):2;
   const totalSteps=Math.ceil(maxBeats*subDiv);
 
-  const tMin=yToTime(0);
-  const tMax=yToTime(H);
-  const beatMin=timeToBeats(tMin);
-  const beatMax=timeToBeats(tMax);
+  const t0=yToTime(0);
+  const tH=yToTime(H);
+  const beatMin=timeToBeats(Math.min(t0, tH));
+  const beatMax=timeToBeats(Math.max(t0, tH));
 
   const startStep=Math.max(0, Math.floor(beatMin * subDiv) - 1);
   const endStep=Math.min(totalSteps, Math.ceil(beatMax * subDiv) + 1);
@@ -514,7 +507,7 @@ function draw(){
     const beatIdx=i/subDiv;
     const t=beatsToTime(beatIdx);
     const y=timeToY(t);
-    if(y<0||y>H)continue;
+    if(y<TOP||y>H)continue;
 
     const isBeat=Math.abs(beatIdx-Math.round(beatIdx))<0.0001;
     const roundedBeat=Math.round(beatIdx);
@@ -538,21 +531,30 @@ function draw(){
       const beatInMeasure=(roundedBeat%4)+1;
       ctx.textAlign="right";
 
+      // 反転状態に合わせて線の「上」または「下」にテキストを配置
+      if(state.flipVertical){
+        ctx.textBaseline="bottom";
+      }else{
+        ctx.textBaseline="top";
+      }
+      const textY = state.flipVertical ? y - 2 : y + 2;
+
       if(isMeasure){
         ctx.fillStyle="#8cb9ff";
         ctx.font="bold 11px system-ui";
-        ctx.fillText(`${measure}.1`,BEAT_W-5,y+4);
+        ctx.fillText(`${measure}.1`,BEAT_W-5,textY);
       }else{
         ctx.fillStyle="#7b88a1";
         ctx.font="10px system-ui";
-        ctx.fillText(`${measure}.${beatInMeasure}`,BEAT_W-5,y+3);
+        ctx.fillText(`${measure}.${beatInMeasure}`,BEAT_W-5,textY);
       }
+      ctx.textBaseline="alphabetic";
     }
   }
 
   for(const b of state.bpms){
     const y=timeToY(b.time);
-    if(y<-20||y>H+20)continue;
+    if(y<TOP-20||y>H+20)continue;
 
     const selected=b.id===state.selectedId;
 
@@ -579,7 +581,7 @@ function draw(){
     const ey=timeToY(e.time);
     const ew=EFF_LANE_W-8;
 
-    if(ey<-20||ey>H+20)continue;
+    if(ey<TOP-20||ey>H+20)continue;
 
     const selected=e.id===state.selectedId;
 
@@ -597,7 +599,7 @@ function draw(){
 
   for(const s of state.speeds){
     const y=timeToY(s.time);
-    if(y<-20||y>H+20)continue;
+    if(y<TOP-20||y>H+20)continue;
 
     const c=speedColor(s.ratio);
     const selected=s.id===state.selectedId;
@@ -633,7 +635,7 @@ function draw(){
 
     const nMinY=Math.min(y,y2);
     const nMaxY=Math.max(y,y2);
-    if(nMaxY<-20||nMinY>H+20)continue;
+    if(nMaxY<TOP-20||nMinY>H+20)continue;
 
     ctx.save();
     ctx.globalAlpha=0.5;
@@ -663,7 +665,7 @@ function draw(){
     const selected=n.id===state.selectedId;
 
     if(isSliderKind(n.kind)){
-      if(y+18<0||y-18>H)continue;
+      if(y+18<TOP||y-18>H)continue;
 
       ctx.save();
       ctx.fillStyle=color(n.kind);
@@ -693,7 +695,7 @@ function draw(){
       ctx.closePath();ctx.fill();
       ctx.restore();
     }else{
-      if(y+18<0||y-18>H)continue;
+      if(y+18<TOP||y-18>H)continue;
 
       ctx.save();
       if(n.kind==="tap_yellow"){
@@ -715,10 +717,43 @@ function draw(){
 
   const ct=currentTime();
   const py=timeToY(ct);
-  if(py>=0&&py<=H){
+  if(py>=TOP&&py<=H){
     ctx.strokeStyle="#fff";ctx.lineWidth=2;
     ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(WAVE_X+WAVE_W,py);ctx.stroke();
   }
+
+  ctx.restore(); // クリッピング解除
+
+  // ヘッダー背景およびテキストの最前面描画
+  ctx.fillStyle="#171a20";
+  ctx.fillRect(0,0,W,TOP);
+  ctx.strokeStyle="#485266";
+  ctx.beginPath();ctx.moveTo(0,TOP-.5);ctx.lineTo(W,TOP-.5);ctx.stroke();
+
+  ctx.fillStyle="#a3b0c9";
+  ctx.font="11px system-ui";
+  ctx.textAlign="center";
+
+  ctx.fillText("拍",BEAT_W/2,18);
+  ctx.fillStyle="#ff8e9b";
+  ctx.fillText("BPM",BPM_X+BPM_W/2,18);
+
+  ctx.fillStyle="#a3b0c9";
+  for(let lane=0;lane<6;lane++){
+    const x=LANES_X+lane*(LANE_W+GAP);
+    ctx.fillText(String(lane+1),x+LANE_W/2,18);
+  }
+
+  ctx.fillText("変速",SPD_X+SPD_W/2,18);
+
+  ctx.fillStyle="#cbb2ff";
+  for(let elane=0;elane<3;elane++){
+    const ex=EFF_X+elane*(EFF_LANE_W+EFF_GAP);
+    ctx.fillText("効果"+(elane+1),ex+EFF_LANE_W/2,18);
+  }
+
+  ctx.fillStyle="#a3b0c9";
+  ctx.fillText("波形",WAVE_CENTER,18);
 }
 
 function currentTime(){
@@ -740,7 +775,6 @@ function loop(){
     const ct=currentTime();
     const maxDur=state.audioDuration??state.buffer?.duration??state.duration;
 
-    // 音声バッファが無い場合などで末尾に到達した際の自動停止処理
     if(!state.buffer && ct >= maxDur){
       state.playing = false;
       state.pausedAt = maxDur;
@@ -748,11 +782,20 @@ function loop(){
       updateUI();
     } else {
       const H=chartHeight();
-      const targetY=H * 0.75;
       const currentY=timeToY(ct);
 
-      if(currentY >= targetY){
-        state.offset=distanceToTime(Math.max(0, timeToDistance(ct) - (targetY - TOP) / state.zoom));
+      if(state.flipVertical){
+        const targetY=TOP + (H - TOP) * 0.25;
+        if(currentY <= targetY){
+          const offsetDist=timeToDistance(ct)-(H-targetY)/state.zoom;
+          state.offset=distanceToTime(Math.max(0, offsetDist));
+        }
+      } else {
+        const targetY=TOP + (H - TOP) * 0.75;
+        if(currentY >= targetY){
+          const offsetDist=timeToDistance(ct)-(targetY-TOP)/state.zoom;
+          state.offset=distanceToTime(Math.max(0, offsetDist));
+        }
       }
       updateUI();
     }
@@ -999,6 +1042,8 @@ chart.addEventListener("pointerdown",e=>{
   const x=e.clientX-r.left;
   const y=e.clientY-r.top;
 
+  if(y<TOP) return; // ヘッダー上のクリックは無視
+
   if(x>=WAVE_X&&x<=WAVE_X+WAVE_W){
     seekTo(yToTime(y), true);
     return;
@@ -1141,6 +1186,10 @@ function drawPreview(){
   const width=LANE_W-12;
 
   ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, TOP, chartWidth(), chartHeight() - TOP);
+  ctx.clip();
+
   ctx.globalAlpha=.5;
   ctx.fillStyle="#f3f5f8";
   ctx.strokeStyle="#ffffff";
@@ -1482,8 +1531,9 @@ function seekTo(t, keepOffset=false){
   if(!keepOffset){
     const py=timeToY(t);
     const H=chartHeight();
-    if(py < TOP || py > H - 20){
-      state.offset=distanceToTime(Math.max(0, timeToDistance(t) - 50 / state.zoom));
+    if(py < TOP + 20 || py > H - 20){
+      const offsetDist=timeToDistance(t)-50/state.zoom;
+      state.offset=distanceToTime(Math.max(0, offsetDist));
     }
   }
   updateUI();
@@ -1516,11 +1566,19 @@ document.getElementById("zoomOut").addEventListener("click",()=>{
   state.zoom=Math.max(30,state.zoom/1.25);resize();
 });
 
+const flipBtn=document.getElementById("flipButton");
+flipBtn.addEventListener("click",()=>{
+  state.flipVertical=!state.flipVertical;
+  flipBtn.classList.toggle("active",state.flipVertical);
+  draw();
+});
+
 wrap.addEventListener("wheel",e=>{
   if(e.shiftKey){
     wrap.scrollLeft+=e.deltaY;
   }else{
-    const dDist = e.deltaY / state.zoom;
+    const dir = state.flipVertical ? -1 : 1;
+    const dDist = (e.deltaY * dir) / state.zoom;
     const curDist = timeToDistance(state.offset);
     const maxT = Math.max(state.duration, MIN_CHART_SECONDS) + 2;
     const maxDist = Math.max(0, timeToDistance(maxT));
