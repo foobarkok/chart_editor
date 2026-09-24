@@ -730,30 +730,46 @@ function draw(){
   ctx.strokeStyle="#485266";
   ctx.beginPath();ctx.moveTo(0,TOP-.5);ctx.lineTo(W,TOP-.5);ctx.stroke();
 
-  ctx.fillStyle="#a3b0c9";
-  ctx.font="11px system-ui";
-  ctx.textAlign="center";
+  // 角丸四角ラベル（バッジ）を描画する共通関数
+  function drawHeaderBadge(text, centerX, borderColor, textColor, bgColor) {
+    ctx.font = "bold 11px system-ui";
+    const w = Math.max(ctx.measureText(text).width + 12, 22);
+    const h = 18;
+    const x = centerX - w / 2;
+    const y = (TOP - h) / 2;
 
-  ctx.fillText("拍",BEAT_W/2,18);
-  ctx.fillStyle="#ff8e9b";
-  ctx.fillText("BPM",BPM_X+BPM_W/2,18);
+    ctx.fillStyle = bgColor;
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 4);
+    ctx.fill();
+    ctx.stroke();
 
-  ctx.fillStyle="#a3b0c9";
+    ctx.fillStyle = textColor;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, centerX, TOP / 2);
+    ctx.textBaseline = "alphabetic";
+  }
+
+  // 各ラベルを対応するレーンカラーの角丸四角で描画
+  drawHeaderBadge("拍", BEAT_W/2, "#485266", "#a3b0c9", "rgba(72, 82, 102, 0.25)");
+  drawHeaderBadge("BPM", BPM_X+BPM_W/2, "#ff5364", "#ff8e9b", "rgba(255, 83, 100, 0.25)");
+
   for(let lane=0;lane<6;lane++){
     const x=LANES_X+lane*(LANE_W+GAP);
-    ctx.fillText(String(lane+1),x+LANE_W/2,18);
+    drawHeaderBadge(String(lane+1), x+LANE_W/2, "#485266", "#a3b0c9", "rgba(72, 82, 102, 0.25)");
   }
 
-  ctx.fillText("変速",SPD_X+SPD_W/2,18);
+  drawHeaderBadge("変速", SPD_X+SPD_W/2, "#5b9bd5", "#8cb9ff", "rgba(91, 155, 213, 0.25)");
 
-  ctx.fillStyle="#cbb2ff";
   for(let elane=0;elane<3;elane++){
     const ex=EFF_X+elane*(EFF_LANE_W+EFF_GAP);
-    ctx.fillText("効果"+(elane+1),ex+EFF_LANE_W/2,18);
+    drawHeaderBadge("効果"+(elane+1), ex+EFF_LANE_W/2, "#2d7d46", "#cbb2ff", "rgba(45, 125, 70, 0.25)");
   }
 
-  ctx.fillStyle="#a3b0c9";
-  ctx.fillText("波形",WAVE_CENTER,18);
+  drawHeaderBadge("波形", WAVE_CENTER, "#4d8cff", "#a3b0c9", "rgba(77, 140, 255, 0.25)");
 }
 
 function currentTime(){
