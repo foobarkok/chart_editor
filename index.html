@@ -65,6 +65,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
     <option value="12">1/12</option><option value="16">1/16</option>
     <option value="24">1/24</option><option value="32">1/32</option>
   </select></div>
+  <div class="group"><label style="cursor:pointer"><input id="showJudgeInput" type="checkbox" checked style="margin:0 3px 0 0">判定表示</label></div>
   <button id="zoomOut">−</button><button id="zoomIn">＋</button>
   <button id="flipButton">↕ 上下反転</button>
   <span class="spacer"></span><span id="status" class="status">準備完了</span>
@@ -194,6 +195,7 @@ const state={
   selectedId:null,
   noteKind:"tap_white",speedKind:"speed_1",mode:"place",
   zoom:180,offset:0,flipVertical:false,
+  showJudgeNotes:true,
   audioContext:null,buffer:null,audioDuration:null,source:null,
   playing:false,startedAt:0,pausedAt:0
 };
@@ -458,6 +460,11 @@ function updateJudgeNotes() {
 
 document.getElementById("judgeSnapInput").addEventListener("change",()=>{
   updateJudgeNotes();
+  draw();
+});
+
+document.getElementById("showJudgeInput").addEventListener("change",(e)=>{
+  state.showJudgeNotes = e.target.checked;
   draw();
 });
 
@@ -792,32 +799,34 @@ function draw(){
     }
   }
   
-  // 判定ロジック用ノーツの描画
-  for(const n of state.notes){
-    if(!n.kind.startsWith("judge_")) continue;
-    
-    let widthPx = (n.width || 1) * LANE_W + ((n.width || 1) - 1) * GAP - 12;
-    let x = LANES_X + n.lane * (LANE_W + GAP) + 6 + widthPx / 2;
-    const y = timeToY(n.time);
+  // 判定ロジック用ノーツの描画（表示フラグが有効な場合のみ）
+  if (state.showJudgeNotes) {
+    for(const n of state.notes){
+      if(!n.kind.startsWith("judge_")) continue;
+      
+      let widthPx = (n.width || 1) * LANE_W + ((n.width || 1) - 1) * GAP - 12;
+      let x = LANES_X + n.lane * (LANE_W + GAP) + 6 + widthPx / 2;
+      const y = timeToY(n.time);
 
-    if (y + 10 < TOP || y - 10 > H) continue;
+      if (y + 10 < TOP || y - 10 > H) continue;
 
-    ctx.save();
-    if(n.kind === "judge_red"){
-      ctx.fillStyle = "#ff5364";
-    }else if(n.kind === "judge_blue"){
-      ctx.fillStyle = "#4d8cff";
-    }else if(n.kind === "judge_white"){
-      ctx.fillStyle = "#f3f5f8";
+      ctx.save();
+      if(n.kind === "judge_red"){
+        ctx.fillStyle = "#ff5364";
+      }else if(n.kind === "judge_blue"){
+        ctx.fillStyle = "#4d8cff";
+      }else if(n.kind === "judge_white"){
+        ctx.fillStyle = "#f3f5f8";
+      }
+      ctx.strokeStyle = "rgba(0,0,0,0.5)";
+      ctx.lineWidth = 1.5;
+
+      ctx.beginPath();
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
     }
-    ctx.strokeStyle = "rgba(0,0,0,0.5)";
-    ctx.lineWidth = 1.5;
-
-    ctx.beginPath();
-    ctx.arc(x, y, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
   }
 
   const ct=currentTime();
@@ -1300,7 +1309,6 @@ chart.addEventListener("pointerup",()=>{
 
   addNote(holdDrag.lane, startTime, duration);
   holdDrag=null;
-  // addNote内部で updateJudgeNotes() と draw() が走ります
 });
 
 chart.addEventListener("pointercancel",()=>{
@@ -1770,7 +1778,7 @@ function chartData(){
   return {
     bpm:state.bpm,
     duration:state.duration,
-    notes:state.notes.filter(n=>!n.kind.startsWith("judge_")), // 作業用保存には非出力
+    notes:state.notes.filter(n=>!n.kind.startsWith("judge_")),
     effects:state.effects,
     effectTypes:state.effectTypes,
     speeds:state.speeds,
