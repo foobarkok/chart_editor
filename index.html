@@ -1778,6 +1778,7 @@ function chartData(){
   return {
     bpm:state.bpm,
     duration:state.duration,
+    judgeSnap: Number(document.getElementById("judgeSnapInput")?.value || 8),
     notes:state.notes.filter(n=>!n.kind.startsWith("judge_")),
     effects:state.effects,
     effectTypes:state.effectTypes,
@@ -1872,6 +1873,11 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
       state.bpm=Math.max(1,Math.min(500,Number(d.bpm)||120));
       state.duration=Math.max(0,Number(d.duration)||0);
       
+      if (d.judgeSnap !== undefined) {
+        const judgeSnapSelect = document.getElementById("judgeSnapInput");
+        if (judgeSnapSelect) judgeSnapSelect.value = d.judgeSnap;
+      }
+
       const loadedNotes = Array.isArray(d.notes) ? d.notes : [];
       state.notes = loadedNotes.filter(n => {
         if (n.kind.startsWith("judge_")) return false;
