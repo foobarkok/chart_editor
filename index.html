@@ -60,6 +60,11 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
     <option value="12">1/12</option><option value="16" selected>1/16</option>
     <option value="24">1/24</option><option value="32">1/32</option>
   </select></div>
+  <div class="group"><label>判定間隔</label><select id="judgeSnapInput">
+    <option value="0">なし</option><option value="4">1/4</option><option value="8" selected>1/8</option>
+    <option value="12">1/12</option><option value="16">1/16</option>
+    <option value="24">1/24</option><option value="32">1/32</option>
+  </select></div>
   <button id="zoomOut">−</button><button id="zoomIn">＋</button>
   <button id="flipButton">↕ 上下反転</button>
   <span class="spacer"></span><span id="status" class="status">準備完了</span>
@@ -383,13 +388,85 @@ function speedColor(ratio){
   return "#ffffff";
 }
 
+// 判定ロジック用ノーツの再配置
+function updateJudgeNotes() {
+  state.notes = state.notes.filter(n => !n.kind.startsWith("judge_"));
+  
+  const judgeSnap = Number(document.getElementById("judgeSnapInput")?.value || 8);
+  const holds = state.notes.filter(n => n.kind === "hold");
+  const EPS = 0.001;
+  
+  for (const n of holds) {
+    const startBeat = timeToBeats(n.time);
+    const endBeat = timeToBeats(n.time + (n.duration || 0));
+    
+    const prev = holds.find(h => Math.abs(h.time + (h.duration || 0) - n.time) < EPS && h.endLane === n.lane);
+    const next = holds.find(h => Math.abs(n.time + (n.duration || 0) - h.time) < EPS && n.endLane === h.lane);
+    
+    if (!prev) {
+      state.notes.push({
+        id: "judge_" + Math.random().toString(36).slice(2),
+        time: n.time,
+        lane: n.lane,
+        width: n.width,
+        kind: "judge_red"
+      });
+    }
+    
+    if (!next) {
+      state.notes.push({
+        id: "judge_" + Math.random().toString(36).slice(2),
+        time: n.time + (n.duration || 0),
+        lane: n.endLane !== undefined ? n.endLane : n.lane,
+        width: n.width,
+        kind: "judge_blue"
+      });
+    }
+    
+    if (judgeSnap > 0 && n.duration > 0) {
+      const stepBeat = 4 / judgeSnap;
+      let b = startBeat + stepBeat;
+      while (b < endBeat - EPS) {
+        const t = beatsToTime(b);
+        const progress = (t - n.time) / n.duration;
+        const l = n.lane + ((n.endLane !== undefined ? n.endLane : n.lane) - n.lane) * progress;
+        state.notes.push({
+          id: "judge_" + Math.random().toString(36).slice(2),
+          time: t,
+          lane: l,
+          width: n.width,
+          kind: "judge_white"
+        });
+        b += stepBeat;
+      }
+      
+      if (next) {
+        const count = (endBeat - startBeat) / stepBeat;
+        if (Math.abs(Math.round(count) - count) < 0.005) {
+          state.notes.push({
+            id: "judge_" + Math.random().toString(36).slice(2),
+            time: n.time + n.duration,
+            lane: n.endLane !== undefined ? n.endLane : n.lane,
+            width: n.width,
+            kind: "judge_white"
+          });
+        }
+      }
+    }
+  }
+}
+
+document.getElementById("judgeSnapInput").addEventListener("change",()=>{
+  updateJudgeNotes();
+  draw();
+});
+
 function draw(){
   const W=chartWidth(),H=chartHeight();
 
   ctx.clearRect(0,0,W,H);
   ctx.fillStyle="#0d0f14";ctx.fillRect(0,0,W,H);
 
-  // 背景枠の描画（画面全体）
   ctx.fillStyle="#12151b";
   ctx.fillRect(0,0,BEAT_W,H);
   ctx.strokeStyle="#485266";
@@ -432,7 +509,6 @@ function draw(){
   ctx.strokeStyle="#485266";
   ctx.strokeRect(WAVE_X+.5,.5,WAVE_W-1,H-1);
 
-  // 譜面領域（TOP〜H）をクリッピングしてノーツ描画
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, TOP, W, H - TOP);
@@ -620,6 +696,7 @@ function draw(){
     ctx.fillText((s.ratio===0.5?"1/2":s.ratio)+"x",SPD_X+SPD_W/2,y+4);
   }
 
+  // ロングノーツの描画
   for(const n of state.notes){
     if(n.kind !== "hold") continue;
 
@@ -655,8 +732,9 @@ function draw(){
     ctx.restore();
   }
 
+  // ロングノーツ以外の通常ノーツ描画
   for(const n of state.notes){
-    if(n.kind === "hold") continue;
+    if(n.kind === "hold" || n.kind.startsWith("judge_")) continue;
 
     let x=LANES_X+n.lane*(LANE_W+GAP)+6;
     const y=timeToY(n.time);
@@ -712,6 +790,34 @@ function draw(){
       ctx.beginPath();ctx.roundRect(x,y-9,width,18,5);ctx.fill();ctx.stroke();
       ctx.restore();
     }
+  }
+  
+  // 判定ロジック用ノーツの描画
+  for(const n of state.notes){
+    if(!n.kind.startsWith("judge_")) continue;
+    
+    let widthPx = (n.width || 1) * LANE_W + ((n.width || 1) - 1) * GAP - 12;
+    let x = LANES_X + n.lane * (LANE_W + GAP) + 6 + widthPx / 2;
+    const y = timeToY(n.time);
+
+    if (y + 10 < TOP || y - 10 > H) continue;
+
+    ctx.save();
+    if(n.kind === "judge_red"){
+      ctx.fillStyle = "#ff5364";
+    }else if(n.kind === "judge_blue"){
+      ctx.fillStyle = "#4d8cff";
+    }else if(n.kind === "judge_white"){
+      ctx.fillStyle = "#f3f5f8";
+    }
+    ctx.strokeStyle = "rgba(0,0,0,0.5)";
+    ctx.lineWidth = 1.5;
+
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
   }
 
   const ct=currentTime();
@@ -837,7 +943,7 @@ document.querySelectorAll(".note-type").forEach(b=>b.addEventListener("click",()
 function hitTest(x,y){
   for(let i=state.notes.length-1;i>=0;i--){
     const n=state.notes[i];
-    if(n.kind==="hold") continue;
+    if(n.kind==="hold" || n.kind.startsWith("judge_")) continue;
 
     let x1=LANES_X+n.lane*(LANE_W+GAP)+6;
     let y1=timeToY(n.time);
@@ -929,6 +1035,7 @@ function getOverlappingNotes(lane, time, width, duration=0, ignoreId=null, check
 
   for(const n of state.notes){
     if(ignoreId && n.id === ignoreId) continue;
+    if(n.kind.startsWith("judge_")) continue;
 
     const isExistingHold = n.kind === "hold";
     if(isCheckingHold !== isExistingHold) continue;
@@ -975,6 +1082,7 @@ function addNote(lane,time,duration=0,endLane=null){
       const removeIds = new Set(overlaps.map(n => n.id));
       state.notes = state.notes.filter(n => !removeIds.has(n.id));
       if(removeIds.has(state.selectedId)) state.selectedId = null;
+      updateJudgeNotes();
       renderSelection();
       draw();
     }
@@ -997,6 +1105,7 @@ function addNote(lane,time,duration=0,endLane=null){
   state.notes.push(n);
   state.selectedId=n.id;
   state.duration=Math.max(state.duration, n.time+n.duration);
+  updateJudgeNotes();
   renderSelection();
   draw();
 }
@@ -1013,6 +1122,7 @@ function addBpmNote(time, bpm){
   state.bpms.push(b);
   state.bpms.sort((a,b)=>a.time-b.time);
   state.selectedId=b.id;
+  updateJudgeNotes();
   renderSelection();
   draw();
 }
@@ -1079,8 +1189,10 @@ chart.addEventListener("pointerdown",e=>{
   if(state.mode==="erase"){
     if(hit){
       state.notes=state.notes.filter(n=>n.id!==hit.id);
+      updateJudgeNotes();
     }else if(hitBpm){
       state.bpms=state.bpms.filter(b=>b.id!==hitBpm.id);
+      updateJudgeNotes();
     }else if(hitSpd){
       state.speeds=state.speeds.filter(s=>s.id!==hitSpd.id);
     }else if(hitEff){
@@ -1096,6 +1208,7 @@ chart.addEventListener("pointerdown",e=>{
     if(hitBpm){
       state.bpms=state.bpms.filter(b=>b.id!==hitBpm.id);
       if(state.selectedId===hitBpm.id)state.selectedId=null;
+      updateJudgeNotes();
       renderSelection();draw();
       return;
     }
@@ -1111,6 +1224,7 @@ chart.addEventListener("pointerdown",e=>{
       if(!isHitHold && !isPlacingHold){
         state.notes=state.notes.filter(n=>n.id!==hit.id);
         if(state.selectedId===hit.id)state.selectedId=null;
+        updateJudgeNotes();
         renderSelection();draw();
         return;
       }
@@ -1186,7 +1300,7 @@ chart.addEventListener("pointerup",()=>{
 
   addNote(holdDrag.lane, startTime, duration);
   holdDrag=null;
-  draw();
+  // addNote内部で updateJudgeNotes() と draw() が走ります
 });
 
 chart.addEventListener("pointercancel",()=>{
@@ -1416,6 +1530,7 @@ document.getElementById("applyEdit").addEventListener("click",()=>{
     e.name=document.getElementById("editName").value.trim()||"effect";
   }
 
+  updateJudgeNotes();
   resize();renderSelection();
 });
 
@@ -1452,7 +1567,7 @@ function scheduleNotesSE(startSec){
   const scheduledTimes=new Set();
 
   for(const n of state.notes){
-    if(n.kind==="tap_yellow") continue;
+    if(n.kind==="tap_yellow" || n.kind.startsWith("judge_")) continue;
     if(n.time>=startSec && n.time<=maxDuration){
       const timeKey=Math.round(n.time * 1000);
       if(scheduledTimes.has(timeKey)) continue;
@@ -1576,6 +1691,7 @@ document.getElementById("bpmInput").addEventListener("change",e=>{
   const val=Number(e.target.value)||120;
   state.bpm=Math.max(1,Math.min(500,val));
   e.target.value=state.bpm;
+  updateJudgeNotes();
   resize();renderSelection();
 });
 
@@ -1630,7 +1746,9 @@ document.addEventListener("keydown",e=>{
     state.bpms=state.bpms.filter(b=>b.id!==state.selectedId);
     state.speeds=state.speeds.filter(s=>s.id!==state.selectedId);
     state.effects=state.effects.filter(ef=>ef.id!==state.selectedId);
-    state.selectedId=null;renderSelection();draw();
+    state.selectedId=null;
+    updateJudgeNotes();
+    renderSelection();draw();
   }
 
   if(e.key==="ArrowLeft"||e.key==="ArrowRight"){
@@ -1652,7 +1770,7 @@ function chartData(){
   return {
     bpm:state.bpm,
     duration:state.duration,
-    notes:state.notes,
+    notes:state.notes.filter(n=>!n.kind.startsWith("judge_")), // 作業用保存には非出力
     effects:state.effects,
     effectTypes:state.effectTypes,
     speeds:state.speeds,
@@ -1748,6 +1866,7 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
       
       const loadedNotes = Array.isArray(d.notes) ? d.notes : [];
       state.notes = loadedNotes.filter(n => {
+        if (n.kind.startsWith("judge_")) return false;
         if (n.kind === "hold" && (Number(n.duration) || 0) <= 0) return false;
         return true;
       }).map(n => {
@@ -1772,6 +1891,8 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
       if(state.audioDuration!==null){
         state.duration=Math.max(state.duration,state.audioDuration);
       }
+      
+      updateJudgeNotes();
       state.offset=0;
       document.getElementById("bpmInput").value=state.bpm;
       state.selectedId=null;
