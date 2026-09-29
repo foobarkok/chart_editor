@@ -66,6 +66,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
     <option value="24">1/24</option><option value="32">1/32</option>
   </select></div>
   <div class="group"><label style="cursor:pointer"><input id="showJudgeInput" type="checkbox" checked style="margin:0 3px 0 0">判定表示</label></div>
+  <div class="group"><label>SE音量</label><input id="seVolumeInput" type="number" min="0" max="100" value="100" style="width:60px"></div>
   <button id="zoomOut">−</button><button id="zoomIn">＋</button>
   <button id="flipButton">↕ 上下反転</button>
   <span class="spacer"></span><span id="status" class="status">準備完了</span>
@@ -196,11 +197,13 @@ const state={
   noteKind:"tap_white",speedKind:"speed_1",mode:"place",
   zoom:180,offset:0,flipVertical:false,
   showJudgeNotes:true,
+  seVolume:100,
   audioContext:null,buffer:null,audioDuration:null,source:null,
   playing:false,startedAt:0,pausedAt:0
 };
 
 let kickBuffer=null;
+let seGainNode=null;
 let activeSENodes=[];
 
 const wrap=document.getElementById("chartScroll");
@@ -390,7 +393,6 @@ function speedColor(ratio){
   return "#ffffff";
 }
 
-// 判定ロジック用ノーツの再配置
 function updateJudgeNotes() {
   state.notes = state.notes.filter(n => !n.kind.startsWith("judge_"));
   
@@ -466,6 +468,16 @@ document.getElementById("judgeSnapInput").addEventListener("change",()=>{
 document.getElementById("showJudgeInput").addEventListener("change",(e)=>{
   state.showJudgeNotes = e.target.checked;
   draw();
+});
+
+document.getElementById("seVolumeInput").addEventListener("input",(e)=>{
+  let val=Number(e.target.value);
+  if(isNaN(val)) val=100;
+  val=Math.max(0,Math.min(100,val));
+  state.seVolume=val;
+  if(seGainNode && state.audioContext){
+    seGainNode.gain.setValueAtTime(val/100, state.audioContext.currentTime);
+  }
 });
 
 function draw(){
@@ -703,7 +715,6 @@ function draw(){
     ctx.fillText((s.ratio===0.5?"1/2":s.ratio)+"x",SPD_X+SPD_W/2,y+4);
   }
 
-  // ロングノーツの描画
   for(const n of state.notes){
     if(n.kind !== "hold") continue;
 
@@ -739,7 +750,6 @@ function draw(){
     ctx.restore();
   }
 
-  // ロングノーツ以外の通常ノーツ描画
   for(const n of state.notes){
     if(n.kind === "hold" || n.kind.startsWith("judge_")) continue;
 
@@ -799,7 +809,6 @@ function draw(){
     }
   }
   
-  // 判定ロジック用ノーツの描画（表示フラグが有効な場合のみ）
   if (state.showJudgeNotes) {
     for(const n of state.notes){
       if(!n.kind.startsWith("judge_")) continue;
@@ -910,15 +919,14 @@ function loop(){
     } else {
       const H=chartHeight();
       const currentY=timeToY(ct);
+      const targetY=TOP + (H - TOP) * 0.75;
 
       if(state.flipVertical){
-        const targetY=TOP + (H - TOP) * 0.25;
         if(currentY <= targetY){
           const offsetDist=timeToDistance(ct)-(H-targetY)/state.zoom;
           state.offset=distanceToTime(Math.max(0, offsetDist));
         }
       } else {
-        const targetY=TOP + (H - TOP) * 0.75;
         if(currentY >= targetY){
           const offsetDist=timeToDistance(ct)-(targetY-TOP)/state.zoom;
           state.offset=distanceToTime(Math.max(0, offsetDist));
@@ -1546,6 +1554,12 @@ async function initAudioContext(){
   if(!state.audioContext) state.audioContext=new (window.AudioContext||window.webkitAudioContext)();
   if(state.audioContext.state==="suspended") await state.audioContext.resume();
 
+  if(!seGainNode){
+    seGainNode=state.audioContext.createGain();
+    seGainNode.gain.value=state.seVolume/100;
+    seGainNode.connect(state.audioContext.destination);
+  }
+
   const beat_filename = "drum.wav";
 
   if(!kickBuffer){
@@ -1572,6 +1586,14 @@ function scheduleNotesSE(startSec){
   clearSE();
   if(!kickBuffer||!state.audioContext)return;
 
+  if(!seGainNode){
+    seGainNode=state.audioContext.createGain();
+    seGainNode.gain.value=state.seVolume/100;
+    seGainNode.connect(state.audioContext.destination);
+  }else{
+    seGainNode.gain.setValueAtTime(state.seVolume/100, state.audioContext.currentTime);
+  }
+
   const maxDuration=state.audioDuration??state.buffer?.duration??state.duration;
   const nowCtx=state.audioContext.currentTime;
   const scheduledTimes=new Set();
@@ -1586,7 +1608,7 @@ function scheduleNotesSE(startSec){
       const delay=n.time-startSec;
       const seSource=state.audioContext.createBufferSource();
       seSource.buffer=kickBuffer;
-      seSource.connect(state.audioContext.destination);
+      seSource.connect(seGainNode);
       seSource.start(nowCtx+delay);
       activeSENodes.push(seSource);
     }
@@ -1679,12 +1701,12 @@ function seekTo(t, keepOffset=false){
   clearSE();
 
   if(!keepOffset){
-    const py=timeToY(t);
     const H=chartHeight();
-    if(py < TOP + 20 || py > H - 20){
-      const offsetDist=timeToDistance(t)-50/state.zoom;
-      state.offset=distanceToTime(Math.max(0, offsetDist));
-    }
+    const targetY=TOP + (H - TOP) * 0.75;
+    const offsetDist=state.flipVertical
+      ? timeToDistance(t) - (H - targetY) / state.zoom
+      : timeToDistance(t) - (targetY - TOP) / state.zoom;
+    state.offset=distanceToTime(Math.max(0, offsetDist));
   }
   updateUI();
 }
@@ -1721,6 +1743,15 @@ const flipBtn=document.getElementById("flipButton");
 flipBtn.addEventListener("click",()=>{
   state.flipVertical=!state.flipVertical;
   flipBtn.classList.toggle("active",state.flipVertical);
+
+  const ct=currentTime();
+  const H=chartHeight();
+  const targetY=TOP + (H - TOP) * 0.75;
+  const offsetDist=state.flipVertical
+    ? timeToDistance(ct) - (H - targetY) / state.zoom
+    : timeToDistance(ct) - (targetY - TOP) / state.zoom;
+  state.offset=distanceToTime(Math.max(0, offsetDist));
+
   draw();
 });
 
