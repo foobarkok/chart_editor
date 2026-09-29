@@ -1546,15 +1546,17 @@ async function initAudioContext(){
   if(!state.audioContext) state.audioContext=new (window.AudioContext||window.webkitAudioContext)();
   if(state.audioContext.state==="suspended") await state.audioContext.resume();
 
+  const beat_filename = "drum.wav";
+
   if(!kickBuffer){
     try{
-      const res=await fetch("kick.wav");
+      const res=await fetch(beat_filename);
       if(res.ok){
         const ab=await res.arrayBuffer();
         kickBuffer=await state.audioContext.decodeAudioData(ab);
       }
     }catch(e){
-      console.warn("kick.wavの読み込みに失敗しました",e);
+      console.warn(beat_filename + "の読み込みに失敗しました",e);
     }
   }
 }
