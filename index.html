@@ -1662,6 +1662,7 @@ async function playAudio(){
     state.playing=false;
     if(state.source){try{state.source.stop()}catch{}state.source=null}
     clearSE();
+    updateUI();
     return;
   }
 
@@ -1681,10 +1682,16 @@ async function playAudio(){
     source.start(0,offset);
 
     source.onended=()=>{
+      // 古い音源の終了イベントは無視する
+      if(state.source !== source) return;
+
+      state.source=null;
+
       if(state.playing){
         state.playing=false;
         state.pausedAt=state.audioDuration??state.buffer?.duration??state.duration;
         clearSE();
+        updateUI();
       }
     };
     state.source=source;
