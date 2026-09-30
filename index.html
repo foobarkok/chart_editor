@@ -55,6 +55,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   <button id="exportGameButton" style="background:#273653;border-color:var(--accent)">🎮 ゲーム用保存</button>
   <input id="jsonInput" type="file" accept=".json,application/json" hidden>
   <div class="group"><label>初期BPM</label><input id="bpmInput" type="number" min="1" max="500" step=".01" value="120" style="width:75px"></div>
+  <div class="group"><label>曲長(s)</label><input id="chartDurationInput" type="number" min="0.5" step="0.1" value="60" style="width:75px"></div>
   <div class="group"><label>Snap</label><select id="snapInput">
     <option value="0">なし</option><option value="4">1/4</option><option value="8">1/8</option>
     <option value="12">1/12</option><option value="16" selected>1/16</option>
@@ -215,7 +216,7 @@ const BPM_X=BEAT_W;
 const BPM_W=55;
 
 const LANES_X=BPM_X+BPM_W+5;
-const LANE_W=92,GAP=3,TOP=30,MIN_CHART_SECONDS=60;
+const LANE_W=92,GAP=3,TOP=30,MIN_CHART_SECONDS=0.5;
 const LANES_RIGHT=LANES_X+6*(LANE_W+GAP)-GAP;
 
 const SPD_X=LANES_RIGHT+5;
@@ -228,6 +229,14 @@ const EFF_RIGHT=EFF_X+3*(EFF_LANE_W+EFF_GAP)-EFF_GAP;
 const WAVE_X=EFF_RIGHT+10;
 const WAVE_W=75;
 const WAVE_CENTER=WAVE_X+WAVE_W/2;
+
+function setChartDuration(val){
+  const minAllowed = state.audioDuration !== null ? state.audioDuration : MIN_CHART_SECONDS;
+  const newDuration = Math.max(minAllowed, Number(val) || MIN_CHART_SECONDS);
+  state.duration = newDuration;
+  const input = document.getElementById("chartDurationInput");
+  if(input) input.value = state.duration;
+}
 
 function getBpmMap(){
   const list=[...state.bpms].sort((a,b)=>a.time-b.time);
@@ -467,6 +476,12 @@ document.getElementById("judgeSnapInput").addEventListener("change",()=>{
 
 document.getElementById("showJudgeInput").addEventListener("change",(e)=>{
   state.showJudgeNotes = e.target.checked;
+  draw();
+});
+
+document.getElementById("chartDurationInput").addEventListener("change",(e)=>{
+  setChartDuration(e.target.value);
+  updateUI();
   draw();
 });
 
@@ -1121,7 +1136,7 @@ function addNote(lane,time,duration=0,endLane=null){
 
   state.notes.push(n);
   state.selectedId=n.id;
-  state.duration=Math.max(state.duration, n.time+n.duration);
+  setChartDuration(Math.max(state.duration, n.time+n.duration));
   updateJudgeNotes();
   renderSelection();
   draw();
@@ -1531,7 +1546,7 @@ document.getElementById("applyEdit").addEventListener("click",()=>{
     n.width=newWidth;
     if(isSliderKind(newKind)) n.direction=newDirection;
     else delete n.direction;
-    state.duration=Math.max(state.duration,n.time+n.duration);
+    setChartDuration(Math.max(state.duration,n.time+n.duration));
   }else if(b){
     b.time=beatsToTime(beatPos);
     const rawBpm=Number(document.getElementById("editBpm").value)||120;
@@ -1624,7 +1639,7 @@ async function loadAudio(file){
   clearSE();
   state.buffer=buffer;
   state.audioDuration=buffer.duration;
-  state.duration=Math.max(state.duration,state.audioDuration);
+  setChartDuration(Math.max(state.duration,state.audioDuration));
   state.pausedAt=0;
   state.playing=false;
 
@@ -1904,7 +1919,7 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
     try{
       const d=JSON.parse(reader.result);
       state.bpm=Math.max(1,Math.min(500,Number(d.bpm)||120));
-      state.duration=Math.max(0,Number(d.duration)||0);
+      setChartDuration(Number(d.duration)||0);
       
       if (d.judgeSnap !== undefined) {
         const judgeSnapSelect = document.getElementById("judgeSnapInput");
@@ -1936,7 +1951,7 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
       state.speeds=Array.isArray(d.speeds)?d.speeds:[];
       state.bpms=Array.isArray(d.bpms)?d.bpms.map(b=>({...b,bpm:Math.max(1,Math.min(500,Number(b.bpm)||120))})):[];
       if(state.audioDuration!==null){
-        state.duration=Math.max(state.duration,state.audioDuration);
+        setChartDuration(state.duration);
       }
       
       updateJudgeNotes();
@@ -1958,6 +1973,7 @@ document.getElementById("newButton").addEventListener("click",()=>{
 
 setKind("note", "tap_white");
 setKind("speed", "speed_1");
+setChartDuration(60);
 renderEffectTypes();
 renderSelection();
 resize();
