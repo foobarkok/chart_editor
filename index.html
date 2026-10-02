@@ -92,6 +92,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   <div class="note-type active" data-group="note" data-kind="tap_white"><span class="swatch" style="background:#f3f5f8"></span>普通・白</div>
   <div class="note-type" data-group="note" data-kind="tap_yellow"><span class="swatch" style="background:rgba(255,234,0,0.5)"></span>普通・黄</div>
   <div class="note-type" data-group="note" data-kind="tap_blue"><span class="swatch" style="background:#4d8cff"></span>普通・青</div>
+  <div class="note-type" data-group="note" data-kind="wheel"><span class="swatch" style="background:#ffea00"></span>星 (wheel)</div>
   <div class="note-type" data-group="note" data-kind="hold"><span class="swatch" style="background:rgba(243,245,248,0.6)"></span>ロング</div>
   <div class="note-type" data-group="note" data-kind="wide_red"><span class="swatch" style="background:#ff5364"></span>幅2・赤</div>
   <div class="note-type" data-group="note" data-kind="wide_blue"><span class="swatch" style="background:#4d8cff"></span>幅2・青</div>
@@ -162,6 +163,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
         <option value="tap_white">普通・白</option>
         <option value="tap_yellow">普通・黄</option>
         <option value="tap_blue">普通・青</option>
+        <option value="wheel">星 (wheel)</option>
         <option value="hold">ロング</option>
         <option value="wide_red">幅2・赤</option>
         <option value="wide_blue">幅2・青</option>
@@ -188,6 +190,14 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
 
 <script>
 "use strict";
+
+const wheelImg = new Image();
+wheelImg.src = "wheel.png";
+let wheelImgLoaded = false;
+wheelImg.onload = () => {
+  wheelImgLoaded = true;
+  draw();
+};
 
 const state={
   bpm:120,duration:60,
@@ -387,7 +397,7 @@ function sliderWidthForKind(kind){
 
 function color(kind){
   if(kind==="wide_red"||kind==="slider_left")return "#ff5364";
-  if(kind==="tap_yellow")return "#ffea00";
+  if(kind==="tap_yellow"||kind==="wheel")return "#ffea00";
   if(kind==="tap_blue"||kind==="wide_blue"||kind==="slider_right")return "#4d8cff";
   return "#f3f5f8";
 }
@@ -773,7 +783,37 @@ function draw(){
     let width=(n.width||1)*LANE_W+(n.width-1)*GAP-12;
     const selected=n.id===state.selectedId;
 
-    if(isSliderKind(n.kind)){
+    if(n.kind==="wheel"){
+      const sz=width;
+      const imgY = state.flipVertical ? y - sz : y;
+      const minY = state.flipVertical ? y - sz : y;
+      const maxY = state.flipVertical ? y : y + sz;
+      if(maxY<TOP||minY>H)continue;
+
+      ctx.save();
+      const cx=x+width/2;
+
+      if(wheelImgLoaded){
+        // 512x512の中央444x444 (余白 (512-444)/2 = 34px) をトリミングして描画
+        // 先頭位置（y）を基準とし、上下反転時は上方向（y - sz）へ描画
+        ctx.drawImage(wheelImg, 34, 34, 444, 444, x, imgY, sz, sz);
+      }else{
+        ctx.fillStyle="#ffea00";
+        ctx.beginPath();
+        const cy = state.flipVertical ? y - sz/2 : y + sz/2;
+        ctx.arc(cx, cy, sz/2, 0, Math.PI*2);
+        ctx.fill();
+      }
+
+      if(selected){
+        ctx.strokeStyle="#fff";
+        ctx.lineWidth=3;
+        ctx.beginPath();
+        ctx.roundRect(x, y - 9, width, 18, 5);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }else if(isSliderKind(n.kind)){
       if(y+18<TOP||y-18>H)continue;
 
       ctx.save();
@@ -1682,7 +1722,6 @@ async function playAudio(){
     source.start(0,offset);
 
     source.onended=()=>{
-      // 古い音源の終了イベントは無視する
       if(state.source !== source) return;
 
       state.source=null;
