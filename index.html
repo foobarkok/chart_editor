@@ -68,6 +68,11 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   </select></div>
   <div class="group"><label style="cursor:pointer"><input id="showJudgeInput" type="checkbox" checked style="margin:0 3px 0 0">判定表示</label></div>
   <div class="group"><label>SE音量</label><input id="seVolumeInput" type="number" min="0" max="100" value="100" style="width:60px"></div>
+  <div class="group"><label>SE音</label><select id="seSelectInput">
+    <option value="drum.wav" selected>Drum (drum.wav)</option>
+    <option value="beep.wav">Beep (beep.wav)</option>
+    <option value="hihat.wav">Hi-Hat (hihat.wav)</option>
+  </select></div>
   <button id="zoomOut">−</button><button id="zoomIn">＋</button>
   <button id="flipButton">↕ 上下反転</button>
   <span class="spacer"></span><span id="status" class="status">準備完了</span>
@@ -213,7 +218,7 @@ const state={
   playing:false,startedAt:0,pausedAt:0
 };
 
-let kickBuffer=null;
+const seBuffers={};
 let seGainNode=null;
 let activeSENodes=[];
 
@@ -794,8 +799,6 @@ function draw(){
       const cx=x+width/2;
 
       if(wheelImgLoaded){
-        // 512x512の中央444x444 (余白 (512-444)/2 = 34px) をトリミングして描画
-        // 先頭位置（y）を基準とし、上下反転時は上方向（y - sz）へ描画
         ctx.drawImage(wheelImg, 34, 34, 444, 444, x, imgY, sz, sz);
       }else{
         ctx.fillStyle="#ffea00";
@@ -1605,6 +1608,22 @@ document.getElementById("applyEdit").addEventListener("click",()=>{
   resize();renderSelection();
 });
 
+async function loadSE(filename){
+  if(seBuffers[filename]) return seBuffers[filename];
+  try{
+    const res=await fetch(filename);
+    if(res.ok){
+      const ab=await res.arrayBuffer();
+      const buf=await state.audioContext.decodeAudioData(ab);
+      seBuffers[filename]=buf;
+      return buf;
+    }
+  }catch(e){
+    console.warn(filename + "の読み込みに失敗しました",e);
+  }
+  return null;
+}
+
 async function initAudioContext(){
   if(!state.audioContext) state.audioContext=new (window.AudioContext||window.webkitAudioContext)();
   if(state.audioContext.state==="suspended") await state.audioContext.resume();
@@ -1615,19 +1634,8 @@ async function initAudioContext(){
     seGainNode.connect(state.audioContext.destination);
   }
 
-  const beat_filename = "drum.wav";
-
-  if(!kickBuffer){
-    try{
-      const res=await fetch(beat_filename);
-      if(res.ok){
-        const ab=await res.arrayBuffer();
-        kickBuffer=await state.audioContext.decodeAudioData(ab);
-      }
-    }catch(e){
-      console.warn(beat_filename + "の読み込みに失敗しました",e);
-    }
-  }
+  const selectedSE = document.getElementById("seSelectInput")?.value || "drum.wav";
+  await loadSE(selectedSE);
 }
 
 function clearSE(){
@@ -1639,7 +1647,9 @@ function clearSE(){
 
 function scheduleNotesSE(startSec){
   clearSE();
-  if(!kickBuffer||!state.audioContext)return;
+  const selectedSE = document.getElementById("seSelectInput")?.value || "drum.wav";
+  const currentBuffer = seBuffers[selectedSE];
+  if(!currentBuffer||!state.audioContext)return;
 
   if(!seGainNode){
     seGainNode=state.audioContext.createGain();
@@ -1662,13 +1672,22 @@ function scheduleNotesSE(startSec){
 
       const delay=n.time-startSec;
       const seSource=state.audioContext.createBufferSource();
-      seSource.buffer=kickBuffer;
+      seSource.buffer=currentBuffer;
       seSource.connect(seGainNode);
       seSource.start(nowCtx+delay);
       activeSENodes.push(seSource);
     }
   }
 }
+
+document.getElementById("seSelectInput").addEventListener("change", async (e)=>{
+  if(state.audioContext){
+    await loadSE(e.target.value);
+    if(state.playing){
+      scheduleNotesSE(currentTime());
+    }
+  }
+});
 
 async function loadAudio(file){
   await initAudioContext();
