@@ -66,6 +66,18 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
     <option value="12">1/12</option><option value="16">1/16</option>
     <option value="24">1/24</option><option value="32">1/32</option>
   </select></div>
+  <div class="group"><label>再生速度</label><select id="playbackRateInput">
+    <option value="0.1">0.1</option>
+    <option value="0.2">0.2</option>
+    <option value="0.3">0.3</option>
+    <option value="0.4">0.4</option>
+    <option value="0.5">0.5</option>
+    <option value="0.6">0.6</option>
+    <option value="0.7">0.7</option>
+    <option value="0.8">0.8</option>
+    <option value="0.9">0.9</option>
+    <option value="1.0" selected>1.0</option>
+  </select></div>
   <div class="group"><label style="cursor:pointer"><input id="showJudgeInput" type="checkbox" checked style="margin:0 3px 0 0">判定表示</label></div>
   <div class="group"><label>SE音量</label><input id="seVolumeInput" type="number" min="0" max="100" value="100" style="width:60px"></div>
   <div class="group"><label>SE音</label><select id="seSelectInput">
@@ -214,6 +226,7 @@ const state={
   zoom:180,offset:0,flipVertical:false,
   showJudgeNotes:true,
   seVolume:100,
+  playbackRate:1.0,
   audioContext:null,buffer:null,audioDuration:null,source:null,
   playing:false,startedAt:0,pausedAt:0
 };
@@ -487,6 +500,20 @@ function updateJudgeNotes() {
 document.getElementById("judgeSnapInput").addEventListener("change",()=>{
   updateJudgeNotes();
   draw();
+});
+
+document.getElementById("playbackRateInput").addEventListener("change",(e)=>{
+  const newRate = Number(e.target.value) || 1.0;
+  if (state.playing) {
+    const ct = currentTime();
+    if(state.source){try{state.source.stop()}catch{}state.source=null}
+    clearSE();
+    state.playbackRate = newRate;
+    state.pausedAt = ct;
+    playAudio();
+  } else {
+    state.playbackRate = newRate;
+  }
 });
 
 document.getElementById("showJudgeInput").addEventListener("change",(e)=>{
@@ -952,7 +979,7 @@ function draw(){
 
 function currentTime(){
   if(!state.playing||!state.audioContext)return state.pausedAt;
-  return Math.max(0,Math.min(state.duration,state.audioContext.currentTime-state.startedAt));
+  return Math.max(0,Math.min(state.duration,(state.audioContext.currentTime-state.startedAt)*state.playbackRate));
 }
 
 function updateUI(){
@@ -1670,11 +1697,13 @@ function scheduleNotesSE(startSec){
       if(scheduledTimes.has(timeKey)) continue;
       scheduledTimes.add(timeKey);
 
-      const delay=n.time-startSec;
+      const delayAudio=n.time-startSec;
+      const delayReal=delayAudio / state.playbackRate;
       const seSource=state.audioContext.createBufferSource();
       seSource.buffer=currentBuffer;
+      seSource.playbackRate.value=state.playbackRate;
       seSource.connect(seGainNode);
-      seSource.start(nowCtx+delay);
+      seSource.start(nowCtx+delayReal);
       activeSENodes.push(seSource);
     }
   }
@@ -1737,6 +1766,7 @@ async function playAudio(){
   if(state.buffer){
     const source=state.audioContext.createBufferSource();
     source.buffer=state.buffer;
+    source.playbackRate.value=state.playbackRate;
     source.connect(state.audioContext.destination);
     source.start(0,offset);
 
@@ -1757,7 +1787,7 @@ async function playAudio(){
     state.source=null;
   }
 
-  state.startedAt=state.audioContext.currentTime-offset;
+  state.startedAt=state.audioContext.currentTime - (offset / state.playbackRate);
   state.playing=true;
 
   scheduleNotesSE(offset);
