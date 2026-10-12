@@ -122,6 +122,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   <div class="note-type active" data-group="speed" data-kind="speed_1"><span class="swatch" style="background:#00e676"></span>変速 1倍</div>
   <div class="note-type" data-group="speed" data-kind="speed_1.5"><span class="swatch" style="background:#b2ff59"></span>変速 1.5倍</div>
   <div class="note-type" data-group="speed" data-kind="speed_2"><span class="swatch" style="background:#ffea00"></span>変速 2倍</div>
+  <div class="note-type" data-group="speed" data-kind="speed_2.5"><span class="swatch" style="background:#4d8cff"></span>変速 2.5倍</div>
   <div class="note-type" data-group="speed" data-kind="speed_3"><span class="swatch" style="background:#ff9100"></span>変速 3倍</div>
   <div class="note-type" data-group="speed" data-kind="speed_4"><span class="swatch" style="background:#ff2a6d"></span>変速 4倍</div>
 
@@ -425,6 +426,7 @@ function speedColor(ratio){
   if(ratio===1)return "#00e676";
   if(ratio===1.5)return "#b2ff59";
   if(ratio===2)return "#ffea00";
+  if(ratio===2.5)return "#4d8cff";
   if(ratio===3)return "#ff9100";
   if(ratio===4)return "#ff2a6d";
   return "#ffffff";
