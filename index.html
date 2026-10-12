@@ -55,6 +55,7 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
   <button id="exportGameButton" style="background:#273653;border-color:var(--accent)">🎮 ゲーム用保存</button>
   <input id="jsonInput" type="file" accept=".json,application/json" hidden>
   <div class="group"><label>初期BPM</label><input id="bpmInput" type="number" min="1" max="500" step=".01" value="120" style="width:75px"></div>
+  <div class="group"><label>オフセット(s)</label><input id="audioOffsetInput" type="number" step=".001" value="0" style="width:75px"></div>
   <div class="group"><label>曲長(s)</label><input id="chartDurationInput" type="number" min="0.5" step="0.1" value="60" style="width:75px"></div>
   <div class="group"><label>Snap</label><select id="snapInput">
     <option value="0">なし</option><option value="4">1/4</option><option value="8">1/8</option>
@@ -218,7 +219,7 @@ wheelImg.onload = () => {
 };
 
 const state={
-  bpm:120,duration:60,
+  bpm:120,duration:60,audioOffset:0,
   notes:[],speeds:[],effects:[],bpms:[],
   effectTypes:["effect","fever","bg_change"],
   activeEffectType:"effect",
@@ -504,6 +505,19 @@ document.getElementById("judgeSnapInput").addEventListener("change",()=>{
   draw();
 });
 
+document.getElementById("audioOffsetInput").addEventListener("change",(e)=>{
+  state.audioOffset = Number(e.target.value) || 0;
+  if(state.playing){
+    const ct = currentTime();
+    if(state.source){try{state.source.stop()}catch{}state.source=null}
+    clearSE();
+    state.pausedAt = ct;
+    playAudio();
+  } else {
+    draw();
+  }
+});
+
 document.getElementById("playbackRateInput").addEventListener("change",(e)=>{
   const newRate = Number(e.target.value) || 1.0;
   if (state.playing) {
@@ -606,8 +620,8 @@ function draw(){
     const endY=Math.min(Math.ceil(H), H);
 
     for(let y=startY;y<endY;y+=2){
-      const t1=yToTime(y);
-      const t2=yToTime(y+2);
+      const t1=yToTime(y) - state.audioOffset;
+      const t2=yToTime(y+2) - state.audioOffset;
 
       if(t1>state.duration&&t2>state.duration)continue;
 
@@ -1770,7 +1784,16 @@ async function playAudio(){
     source.buffer=state.buffer;
     source.playbackRate.value=state.playbackRate;
     source.connect(state.audioContext.destination);
-    source.start(0,offset);
+
+    const audioTime = offset - state.audioOffset;
+    const now = state.audioContext.currentTime;
+
+    if(audioTime >= 0){
+      source.start(0, audioTime);
+    }else{
+      const delay = -audioTime / state.playbackRate;
+      source.start(now + delay, 0);
+    }
 
     source.onended=()=>{
       if(state.source !== source) return;
@@ -1923,6 +1946,7 @@ function chartData(){
   return {
     bpm:state.bpm,
     duration:state.duration,
+    audioOffset:state.audioOffset,
     judgeSnap: Number(document.getElementById("judgeSnapInput")?.value || 8),
     notes:state.notes.filter(n=>!n.kind.startsWith("judge_")),
     effects:state.effects,
@@ -1991,6 +2015,7 @@ function exportGameChart(){
   const gameData = {
     bpm: state.bpm,
     duration: state.duration,
+    audioOffset: state.audioOffset,
     objs: combined
   };
 
@@ -2016,7 +2041,11 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
     try{
       const d=JSON.parse(reader.result);
       state.bpm=Math.max(1,Math.min(500,Number(d.bpm)||120));
+      state.audioOffset=Number(d.audioOffset)||0;
       setChartDuration(Number(d.duration)||0);
+
+      const offsetInput = document.getElementById("audioOffsetInput");
+      if(offsetInput) offsetInput.value = state.audioOffset;
       
       if (d.judgeSnap !== undefined) {
         const judgeSnapSelect = document.getElementById("judgeSnapInput");
