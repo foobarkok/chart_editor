@@ -271,10 +271,10 @@ function setChartDuration(val){
   if(input) input.value = state.duration;
 }
 
-function getBpmMap(){
-  const list=[...state.bpms].sort((a,b)=>a.time-b.time);
+function getBpmMap(bpmList = state.bpms, baseBpmVal = state.bpm){
+  const list=[...bpmList].sort((a,b)=>a.time-b.time);
   const segments=[];
-  const baseBpm=state.bpm||120;
+  const baseBpm=baseBpmVal||120;
 
   if(list.length===0||list[0].time>0){
     segments.push({time:0,bpm:baseBpm,startBeat:0});
@@ -294,9 +294,9 @@ function getBpmMap(){
   return segments;
 }
 
-function timeToBeats(t){
+function timeToBeats(t, bpmList = state.bpms, baseBpmVal = state.bpm){
   if(t<=0)return 0;
-  const segments=getBpmMap();
+  const segments=getBpmMap(bpmList, baseBpmVal);
   let seg=segments[0];
   for(let i=0;i<segments.length;i++){
     if(segments[i].time<=t) seg=segments[i];
@@ -305,9 +305,9 @@ function timeToBeats(t){
   return seg.startBeat+((t-seg.time)*seg.bpm)/60;
 }
 
-function beatsToTime(b){
+function beatsToTime(b, bpmList = state.bpms, baseBpmVal = state.bpm){
   if(b<=0)return 0;
-  const segments=getBpmMap();
+  const segments=getBpmMap(bpmList, baseBpmVal);
   let seg=segments[0];
   for(let i=0;i<segments.length;i++){
     if(segments[i].startBeat<=b) seg=segments[i];
@@ -475,7 +475,7 @@ function updateJudgeNotes() {
       let b = startBeat + stepBeat;
       while (b < endBeat - EPS) {
         const t = beatsToTime(b);
-        const progress = (t - n.time) / n.duration;
+        const progress = (endBeat > startBeat) ? (b - startBeat) / (endBeat - startBeat) : 0;
         const l = n.lane + ((n.endLane !== undefined ? n.endLane : n.lane) - n.lane) * progress;
         state.notes.push({
           id: "judge_" + Math.random().toString(36).slice(2),
@@ -1204,7 +1204,8 @@ function addNote(lane,time,duration=0,endLane=null){
   const snapVal=Number(document.getElementById("snapInput").value)||16;
   const snappedTime=snapTime(time);
   const isHold = state.noteKind === "hold";
-  const dur = isHold ? Math.max(0, duration) : 0;
+  const minDur = isHold ? (beatsToTime(timeToBeats(snappedTime) + 2 / snapVal) - snappedTime) : 0;
+  const dur = isHold ? Math.max(minDur, duration) : 0;
 
   const overlaps = getOverlappingNotes(lane, snappedTime, width, dur, null, state.noteKind);
 
@@ -1230,7 +1231,7 @@ function addNote(lane,time,duration=0,endLane=null){
     direction:isSliderKind(state.noteKind)
       ? (state.noteKind==="slider_right"?"right":"left")
       : undefined,
-    duration:isHold?Math.max(2/snapVal,duration):0
+    duration:dur
   };
 
   state.notes.push(n);
@@ -1567,7 +1568,9 @@ function renderSelection(){
     editLane.min=1;editLane.max=6;editLane.step="0.01";
     editTime.value=+timeToBeats(n.time).toFixed(2);
     editLane.value=+(n.lane+1).toFixed(2);
-    document.getElementById("editDuration").value=+timeToBeats(n.duration||0).toFixed(2);
+    
+    const durBeats = timeToBeats(n.time + (n.duration || 0)) - timeToBeats(n.time);
+    document.getElementById("editDuration").value=+durBeats.toFixed(2);
     document.getElementById("editKind").value=n.kind;
 
     if(n.kind==="hold"){
@@ -1647,9 +1650,10 @@ document.getElementById("applyEdit").addEventListener("click",()=>{
     else delete n.direction;
     setChartDuration(Math.max(state.duration,n.time+n.duration));
   }else if(b){
-    b.time=beatsToTime(beatPos);
     const rawBpm=Number(document.getElementById("editBpm").value)||120;
     b.bpm=Math.max(1,Math.min(500,rawBpm));
+    const otherBpms = state.bpms.filter(x => x.id !== b.id);
+    b.time = beatsToTime(beatPos, otherBpms, state.bpm);
     state.bpms.sort((x,y)=>x.time-y.time);
   }else if(s){
     s.time=beatsToTime(beatPos);
