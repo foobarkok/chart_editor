@@ -80,7 +80,8 @@ kbd{background:#292e38;border:1px solid #454b59;border-radius:3px;padding:1px 4p
     <option value="1.0" selected>1.0</option>
   </select></div>
   <div class="group"><label style="cursor:pointer"><input id="showJudgeInput" type="checkbox" checked style="margin:0 3px 0 0">判定表示</label></div>
-  <div class="group"><label>SE音量</label><input id="seVolumeInput" type="number" min="0" max="100" value="100" style="width:60px"></div>
+  <div class="group"><label>曲音量(%)</label><input id="bgmVolumeInput" type="number" min="0.01" max="10000" step="0.01" value="100" style="width:75px"></div>
+  <div class="group"><label>SE音量(%)</label><input id="seVolumeInput" type="number" min="0.01" max="10000" step="0.01" value="100" style="width:75px"></div>
   <div class="group"><label>SE音</label><select id="seSelectInput">
     <option value="drum.wav" selected>Drum (drum.wav)</option>
     <option value="beep.wav">Beep (beep.wav)</option>
@@ -227,6 +228,7 @@ const state={
   noteKind:"tap_white",speedKind:"speed_1",mode:"place",
   zoom:180,offset:0,flipVertical:false,
   showJudgeNotes:true,
+  bgmVolume:100,
   seVolume:100,
   playbackRate:1.0,
   audioContext:null,buffer:null,audioDuration:null,source:null,
@@ -235,6 +237,7 @@ const state={
 
 const seBuffers={};
 let seGainNode=null;
+let bgmGainNode=null;
 let activeSENodes=[];
 
 const wrap=document.getElementById("chartScroll");
@@ -543,10 +546,20 @@ document.getElementById("chartDurationInput").addEventListener("change",(e)=>{
   draw();
 });
 
+document.getElementById("bgmVolumeInput").addEventListener("input",(e)=>{
+  let val=Number(e.target.value);
+  if(isNaN(val)) val=100;
+  val=Math.max(0.01,Math.min(10000,val));
+  state.bgmVolume=val;
+  if(bgmGainNode && state.audioContext){
+    bgmGainNode.gain.setValueAtTime(val/100, state.audioContext.currentTime);
+  }
+});
+
 document.getElementById("seVolumeInput").addEventListener("input",(e)=>{
   let val=Number(e.target.value);
   if(isNaN(val)) val=100;
-  val=Math.max(0,Math.min(100,val));
+  val=Math.max(0.01,Math.min(10000,val));
   state.seVolume=val;
   if(seGainNode && state.audioContext){
     seGainNode.gain.setValueAtTime(val/100, state.audioContext.currentTime);
@@ -1671,6 +1684,12 @@ async function initAudioContext(){
   if(!state.audioContext) state.audioContext=new (window.AudioContext||window.webkitAudioContext)();
   if(state.audioContext.state==="suspended") await state.audioContext.resume();
 
+  if(!bgmGainNode){
+    bgmGainNode=state.audioContext.createGain();
+    bgmGainNode.gain.value=state.bgmVolume/100;
+    bgmGainNode.connect(state.audioContext.destination);
+  }
+
   if(!seGainNode){
     seGainNode=state.audioContext.createGain();
     seGainNode.gain.value=state.seVolume/100;
@@ -1783,7 +1802,7 @@ async function playAudio(){
     const source=state.audioContext.createBufferSource();
     source.buffer=state.buffer;
     source.playbackRate.value=state.playbackRate;
-    source.connect(state.audioContext.destination);
+    source.connect(bgmGainNode);
 
     const audioTime = offset - state.audioOffset;
     const now = state.audioContext.currentTime;
@@ -1947,6 +1966,8 @@ function chartData(){
     bpm:state.bpm,
     duration:state.duration,
     audioOffset:state.audioOffset,
+    bgmVolume:state.bgmVolume,
+    seVolume:state.seVolume,
     judgeSnap: Number(document.getElementById("judgeSnapInput")?.value || 8),
     notes:state.notes.filter(n=>!n.kind.startsWith("judge_")),
     effects:state.effects,
@@ -2016,6 +2037,8 @@ function exportGameChart(){
     bpm: state.bpm,
     duration: state.duration,
     audioOffset: state.audioOffset,
+    bgmVolume: state.bgmVolume,
+    seVolume: state.seVolume,
     objs: combined
   };
 
@@ -2046,6 +2069,20 @@ document.getElementById("jsonInput").addEventListener("change",e=>{
 
       const offsetInput = document.getElementById("audioOffsetInput");
       if(offsetInput) offsetInput.value = state.audioOffset;
+
+      if (d.bgmVolume !== undefined) {
+        state.bgmVolume = Number(d.bgmVolume);
+        const bgmVolInput = document.getElementById("bgmVolumeInput");
+        if(bgmVolInput) bgmVolInput.value = state.bgmVolume;
+        if(bgmGainNode && state.audioContext) bgmGainNode.gain.setValueAtTime(state.bgmVolume/100, state.audioContext.currentTime);
+      }
+
+      if (d.seVolume !== undefined) {
+        state.seVolume = Number(d.seVolume);
+        const seVolInput = document.getElementById("seVolumeInput");
+        if(seVolInput) seVolInput.value = state.seVolume;
+        if(seGainNode && state.audioContext) seGainNode.gain.setValueAtTime(state.seVolume/100, state.audioContext.currentTime);
+      }
       
       if (d.judgeSnap !== undefined) {
         const judgeSnapSelect = document.getElementById("judgeSnapInput");
