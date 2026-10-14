@@ -1981,7 +1981,18 @@ function chartData(){
   };
 }
 
+// 譜面の曲長チェック用関数
+function checkChartDuration() {
+  // 音声データが読み込まれており、(譜面の曲長 - 音声データの長さ) が10ms (0.01s) 以上長い場合
+  if (state.audioDuration !== null && (state.duration - state.audioDuration) >= 0.01) {
+    return confirm("曲長が音声データよりも長く指定されています。これが意図的なものである場合は無視して続行してください。");
+  }
+  return true;
+}
+
 function saveJSON(){
+  if (!checkChartDuration()) return; // キャンセルされた場合は保存処理を中止
+
   const blob=new Blob([JSON.stringify(chartData(),null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
@@ -1990,6 +2001,8 @@ function saveJSON(){
 }
 
 function exportGameChart(){
+  if (!checkChartDuration()) return; // キャンセルされた場合は保存処理を中止
+
   const lines = [];
   
   // 0拍目から順にlineを生成
